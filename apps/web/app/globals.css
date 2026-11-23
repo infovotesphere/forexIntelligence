@@ -129,25 +129,40 @@ button, input, select { font: inherit; }
 .simulated-feed { color: #e7c89f; background: #281d12; }
 .live-feed { color: #75d6bd; background: #10251f; }
 .market-safety { margin: 14px 18px 18px; }
-.signals-content { display: grid; gap: 12px; }
-.signal-warning { display: grid; gap: 4px; padding: 12px 14px; border: 1px solid #73532f; border-radius: 8px; background: #21190f; color: #e7c89f; font-size: 12px; line-height: 1.5; }
-.signal-warning strong { color: #ffd393; }
-.signal-controls { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; min-height: 0; }
+.signals-content { display: grid; gap: 14px; }
+.signal-warning { display: grid; gap: 4px; padding: 13px 15px; border: 1px solid #65502f; border-radius: 10px; background: linear-gradient(110deg, rgba(91,64,28,.32), rgba(17,28,40,.72)); color: #e7c89f; font-size: 12px; line-height: 1.5; }
+.signal-warning strong { color: #ffd393; letter-spacing: .01em; }
+.signal-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 14px 18px; min-height: 0; padding: 20px; background: radial-gradient(ellipse at 92% 10%, rgba(52,126,112,.12), transparent 38%), var(--surface); }
+.signal-controls > .error-text, .signal-controls > .signal-scan-result { grid-column: 1 / -1; }
 .signal-controls h2, .signal-list-heading h2 { margin: 0 0 5px; font-size: 14px; }
 .signal-controls p, .signal-list-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .signal-form { display: flex; align-items: flex-end; gap: 9px; flex-wrap: wrap; }
 .signal-form label { display: grid; gap: 5px; color: var(--muted); font-size: 11px; }
-.signal-form select { height: 38px; min-width: 100px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; background: #080d14; color: var(--foreground); }
+.signal-form select { height: 40px; min-width: 148px; border: 1px solid #2a3a4b; border-radius: 7px; padding: 0 10px; outline: none; background: #080d14; color: var(--foreground); transition: border-color .16s ease, box-shadow .16s ease; }
+.signal-form select:focus-visible { border-color: #3a9a82; box-shadow: 0 0 0 3px rgba(58,154,130,.16); }
+.signal-form .primary-button { height: 40px; white-space: nowrap; }
+.signal-scan-result { margin: 0; padding: 10px 12px; border: 1px solid #26394a; border-radius: 8px; background: rgba(15,26,38,.78); color: #b7c8d8; font-size: 12px; line-height: 1.5; }
+.signal-kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.signal-kpi { display: grid; grid-template-columns: 1fr auto; align-items: center; column-gap: 12px; padding: 14px 16px; background: linear-gradient(145deg, rgba(17,28,40,.96), rgba(11,17,24,.96)); }
+.signal-kpi > span { color: var(--muted); font-size: 11px; }
+.signal-kpi > strong { grid-column: 2; grid-row: 1 / span 2; color: var(--foreground); font-size: 24px; font-variant-numeric: tabular-nums; letter-spacing: -.03em; }
+.signal-kpi > small { margin-top: 4px; color: #708195; font-size: 10px; }
 .signal-list { overflow: hidden; }
-.signal-list-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px; border-bottom: 1px solid var(--border); }
+.signal-list-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px; border-bottom: 1px solid var(--border); background: linear-gradient(110deg, rgba(20,33,46,.7), rgba(13,21,32,.2)); }
 .signal-empty { min-height: 180px; border: 0; border-radius: 0; }
 .signal-table-wrap { width: 100%; overflow-x: auto; }
 .signal-table { min-width: 920px; }
 .signal-table td { vertical-align: top; }
 .signal-meta { display: block; margin-top: 4px; color: var(--muted); font-size: 10px; white-space: nowrap; }
-.signal-direction, .signal-status { display: inline-flex; border-radius: 999px; padding: 4px 7px; color: var(--muted); background: var(--surface-2); font-size: 10px; }
+.signal-table th { position: sticky; top: 0; z-index: 1; background: #0e1722; color: #8193a6; font-size: 10px; letter-spacing: .07em; text-transform: uppercase; }
+.signal-table tbody tr { transition: background-color .14s ease; }
+.signal-table tbody tr:hover { background: rgba(30,48,64,.32); }
+.signal-table td:nth-child(4), .signal-table td:nth-child(5), .signal-table td:nth-child(6) { font-variant-numeric: tabular-nums; }
+.signal-direction, .signal-status { display: inline-flex; border: 1px solid transparent; border-radius: 999px; padding: 5px 8px; color: var(--muted); background: var(--surface-2); font-size: 10px; font-weight: 650; letter-spacing: .025em; }
 .buy-direction, .signal-status.validated { color: #75d6bd; background: #10251f; }
 .sell-direction, .signal-status.rejected, .signal-status.expired { color: #ef9b9b; background: #2a171b; }
+.signal-ratio { display: inline-flex; border: 1px solid rgba(126,145,255,.2); border-radius: 6px; padding: 4px 7px; background: rgba(53,66,119,.18); color: #c3ccff; font-size: 11px; font-weight: 650; white-space: nowrap; }
+.signal-quality { color: #d7e0e8; font-size: 12px; font-weight: 600; }
 .signal-reason { max-width: 260px; color: var(--muted); font-size: 11px; line-height: 1.45; }
 .dashboard-error { margin: 0 0 12px; }
 .dashboard-metrics { margin-bottom: 12px; }
@@ -228,12 +243,44 @@ button, input, select { font: inherit; }
 .backtest-controls p, .backtest-result-heading p { margin: 0; color: var(--muted); font-size: 12px; }
 .backtest-result-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 8px 0 0; }
 .backtest-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.equity-panel { overflow: hidden; padding: 18px 20px 14px; background: radial-gradient(ellipse at 86% 0, rgba(42,199,154,.08), transparent 36%), var(--surface); }
+.equity-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.equity-heading h2 { margin: 0 0 5px; font-size: 14px; }
+.equity-heading p { margin: 0; color: var(--muted); font-size: 11px; }
+.equity-current { border: 1px solid rgba(42,199,154,.24); border-radius: 7px; padding: 6px 9px; background: rgba(16,54,44,.5); color: #75d6bd; font-size: 12px; font-variant-numeric: tabular-nums; font-weight: 650; }
+.equity-chart { margin-top: 12px; }
+.equity-chart svg { display: block; width: 100%; height: 220px; overflow: visible; }
+.equity-gridline { stroke: #1b2a37; stroke-width: 1; }
+.equity-zero-line { stroke: #536274; stroke-width: 1; stroke-dasharray: 4 5; }
+.equity-axis-label { fill: #8193a6; font-size: 10px; }
+.equity-area { fill: rgba(42,199,154,.1); }
+.equity-line { fill: none; stroke: #2ac79a; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.equity-point { fill: #9debd4; opacity: .7; }
+.equity-last-point { fill: #75d6bd; stroke: #0b1118; stroke-width: 2; vector-effect: non-scaling-stroke; }
+.equity-axis-labels { display: flex; justify-content: space-between; gap: 12px; color: #708195; font-size: 10px; }
+.equity-empty { min-height: 120px; border: 0; }
 .backtest-trades { overflow: hidden; }
 .backtest-empty { min-height: 150px; }
 .backtest-table-wrap { width: 100%; overflow-x: auto; }
 .backtest-table { min-width: 1000px; }
 .backtest-table td { white-space: nowrap; }
 .backtest-model { margin: 0; }
+.replay-controls { display: grid; gap: 12px; }
+.replay-transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.replay-speed { display: flex; align-items: center; gap: 8px; margin-left: auto; color: var(--muted); font-size: 11px; }
+.replay-speed select { height: 38px; min-width: 76px; border: 1px solid var(--border); border-radius: 6px; padding: 0 8px; background: #080d14; color: var(--foreground); }
+.replay-slider { width: 100%; accent-color: #2ac79a; cursor: pointer; }
+.replay-progress { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 11px; }
+.replay-chart-panel { overflow: hidden; padding: 0; }
+.replay-chart-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.replay-chart-heading > strong { color: var(--muted); font-size: 11px; font-weight: 500; }
+.replay-ohlc { display: flex; flex-wrap: wrap; gap: 12px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.replay-chart-canvas { width: 100%; height: 380px; }
+.chart-attribution { display: block; padding: 8px 12px; border-top: 1px solid var(--border); color: var(--muted); font-size: 10px; text-align: right; text-decoration: none; }
+.chart-attribution:hover { color: var(--foreground); }
+.replay-pending { display: grid; gap: 5px; padding: 14px; }
+.replay-pending strong { font-size: 12px; }
+.replay-pending span { color: var(--muted); font-size: 11px; }
 .strategy-content { display: grid; gap: 12px; }
 .strategy-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .strategy-card { padding: 18px; }
@@ -268,9 +315,11 @@ button, input, select { font: inherit; }
   .metrics { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .two-col { grid-template-columns: 1fr; }
   .risk-layout { grid-template-columns: 1fr; }
-  .signal-controls { display: grid; }
+  .signal-controls { display: grid; grid-template-columns: 1fr; }
   .signal-form { align-items: stretch; }
-  .signal-form label { flex: 1; }
+  .signal-form label { flex: 1 1 140px; }
+  .signal-form select, .signal-form .primary-button { width: 100%; }
+  .signal-kpis { grid-template-columns: 1fr; }
   .analysis-controls { display: grid; }
   .analysis-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analysis-indicators { grid-template-columns: 1fr; }
@@ -278,6 +327,8 @@ button, input, select { font: inherit; }
   .analysis-level-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .history-toolbar { align-items: center; }
   .backtest-controls { display: grid; }
+  .replay-chart-heading { align-items: flex-start; flex-direction: column; }
+  .replay-speed { margin-left: 0; }
   .backtest-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .strategy-grid { grid-template-columns: 1fr; }
   .strategy-validation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

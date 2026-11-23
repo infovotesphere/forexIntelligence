@@ -96,13 +96,22 @@ def backtest_strategy(
     peak = Decimal("0")
     equity = Decimal("0")
     max_drawdown = Decimal("0")
+    equity_curve: list[dict] = []
     for trade in resolved:
         equity += Decimal(trade["r_multiple"])
         peak = max(peak, equity)
-        max_drawdown = max(max_drawdown, peak - equity)
+        drawdown = peak - equity
+        max_drawdown = max(max_drawdown, drawdown)
+        equity_curve.append({
+            "trade_number": len(equity_curve) + 1,
+            "time": trade["exit_time"],
+            "cumulative_r": str(equity),
+            "drawdown_r": str(drawdown),
+        })
 
     return {
         "trades": trades,
+        "equity_curve": equity_curve,
         "summary": {
             "total_trades": len(trades),
             "resolved_trades": len(resolved),

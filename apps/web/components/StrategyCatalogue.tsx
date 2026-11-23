@@ -46,7 +46,7 @@ export function StrategyCatalogue() {
             <div className="strategy-risk"><span>Risk model</span><strong>{strategy.risk}</strong></div>
             <div className="strategy-footer">
               <Link href="/signals">Generate candidates</Link>
-              <Link href="/backtesting">Open backtesting</Link>
+              <Link href={`/backtesting?strategy=${strategy.key}`}>Backtest this strategy</Link>
             </div>
           </article>
         ))}

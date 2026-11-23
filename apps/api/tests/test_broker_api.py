@@ -48,7 +48,7 @@ def test_simulation_positions_endpoint_is_read_only_and_empty():
     assert response.json()["trading_mode"] == "paper_only"
 
 
-def test_simulation_history_endpoint_is_empty_and_marked_simulated():
+def test_simulation_history_endpoint_is_empty_and_marked_simulated(sqlite_database):
     client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
     response = client.get("/api/v1/history")
 

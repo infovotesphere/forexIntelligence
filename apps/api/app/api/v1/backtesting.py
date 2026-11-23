@@ -1,10 +1,13 @@
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.broker import simulation_adapter
+from app.core.market_data import get_mt5_candles
+from app.core.runtime import runtime_store
 from trading.backtesting.engine import backtest_strategy
 from trading.strategies.base import Strategy
 from trading.strategies.breakout_retest import BreakoutRetestStrategy
@@ -28,32 +31,103 @@ class BacktestRequest(BaseModel):
 @router.post("/run")
 def run_backtest(payload: BacktestRequest) -> dict:
     end = datetime.now(UTC)
-    start = end - timedelta(minutes=TIMEFRAME_MINUTES[payload.timeframe] * payload.bars)
-    try:
-        candles = simulation_adapter.get_historical_candles(
-            payload.symbol.upper(), payload.timeframe, start, end
+    timeframe_minutes = TIMEFRAME_MINUTES[payload.timeframe]
+    state = runtime_store.state
+    if state.broker == "mt5":
+        if not runtime_store.broker_connected():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 worker is disconnected; refusing to substitute simulation candles",
+            )
+        snapshot = get_mt5_candles(payload.symbol.upper(), payload.timeframe)
+        if snapshot is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"No MT5 {payload.timeframe} candle history is available for {payload.symbol.upper()}",
+            )
+        actual_symbol, broker_candles = snapshot
+        quote = next(
+            (
+                item for item in state.market_data
+                if str(item.get("base_symbol", "")).upper() == payload.symbol.upper()
+                or str(item.get("symbol", "")).upper() == actual_symbol.upper()
+            ),
+            None,
         )
-        instrument = simulation_adapter.get_symbol_info(payload.symbol.upper())
-    except (KeyError, ValueError) as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if quote is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"MT5 tick-size metadata is unavailable for {payload.symbol.upper()}",
+            )
+        try:
+            tick_size = Decimal(str(quote["tick_size"]))
+        except (KeyError, InvalidOperation) as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"MT5 tick-size metadata is unavailable for {payload.symbol.upper()}",
+            ) from exc
+        if not tick_size.is_finite() or tick_size <= 0:
+            raise HTTPException(
+                status_code=503,
+                detail=f"MT5 tick-size metadata is invalid for {payload.symbol.upper()}",
+            )
+        candles = broker_candles[-(payload.bars + 1):]
+        if candles and candles[-1].time + timedelta(minutes=timeframe_minutes) > end:
+            candles = candles[:-1]
+        completed = candles[-payload.bars:]
+        backtest_symbol = actual_symbol
+        simulated = False
+    elif state.broker == "simulation":
+        start = end - timedelta(minutes=timeframe_minutes * payload.bars)
+        try:
+            candles = simulation_adapter.get_historical_candles(
+                payload.symbol.upper(), payload.timeframe, start, end
+            )
+            instrument = simulation_adapter.get_symbol_info(payload.symbol.upper())
+        except (KeyError, ValueError) as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        completed = candles[:-1]
+        backtest_symbol = payload.symbol.upper()
+        tick_size = instrument.tick_size
+        simulated = True
+    else:
+        raise HTTPException(
+            status_code=503,
+            detail="No broker account is selected; connect MT5 for broker candles or explicitly connect simulation",
+        )
 
-    completed = candles[:-1]
+    if len(completed) < 30:
+        raise HTTPException(status_code=503, detail="At least 30 completed candles are required for a backtest")
+
     result = backtest_strategy(
-        payload.symbol.upper(),
+        backtest_symbol,
         payload.timeframe,
         completed,
         STRATEGIES[payload.strategy](),
-        tick_size=instrument.tick_size,
+        tick_size=tick_size,
     )
     return {
-        "symbol": payload.symbol.upper(),
+        "symbol": backtest_symbol,
         "timeframe": payload.timeframe,
         "strategy": payload.strategy,
         "bars_tested": len(completed),
-        "tick_size": str(instrument.tick_size),
-        "simulated": True,
+        "tick_size": str(tick_size),
+        "simulated": simulated,
+        "data_source": "simulation" if simulated else "mt5",
+        "candles": [
+            {
+                "time": candle.time.isoformat(),
+                "open": str(candle.open),
+                "high": str(candle.high),
+                "low": str(candle.low),
+                "close": str(candle.close),
+                "volume": str(candle.volume),
+            }
+            for candle in completed
+        ],
         "execution_model": (
-            "Entry at signal candle close; exit at TP3 or stop loss. "
+            f"Price source: {'generated simulation' if simulated else 'read-only MT5 broker history'}. "
+            "This is a paper replay; no broker orders are sent. Entry at signal candle close; exit at TP3 or stop loss. "
             "Stop loss is assumed first if both levels are touched in one candle. "
             "Spread, slippage, commissions and partial targets are not modeled."
         ),

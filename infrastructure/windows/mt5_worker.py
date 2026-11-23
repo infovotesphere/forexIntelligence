@@ -18,7 +18,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger("forex-mt5-worker")
 MONITORED_SYMBOLS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD")
 TIMEFRAME_MINUTES = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
-CANDLE_HISTORY_BARS = 260
+CANDLE_HISTORY_BARS = 501
 CANDLE_REFRESH_SECONDS = 60
 
 

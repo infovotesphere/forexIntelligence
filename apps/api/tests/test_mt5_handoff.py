@@ -1,7 +1,14 @@
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal
+
 from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
+import pytest
+from pydantic import ValidationError
 
 from app.api.v1 import broker
+from app.api.v1.broker import WorkerCandleSnapshot
 from app.core.auth import AUTH_COOKIE_NAME
 from app.core.config import Settings
 from app.core.security import create_access_token
@@ -11,7 +18,37 @@ from app.main import app
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
-def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticated(monkeypatch):
+def test_worker_candle_history_accepts_501_bars_and_rejects_more():
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    candles = [
+        {
+            "time": start + timedelta(hours=index),
+            "open": "1.10000",
+            "high": "1.10100",
+            "low": "1.09900",
+            "close": "1.10050",
+            "volume": "100",
+        }
+        for index in range(501)
+    ]
+    snapshot = {
+        "base_symbol": "EURUSD",
+        "symbol": "EURUSDm",
+        "timeframe": "H1",
+        "candles": candles,
+    }
+
+    assert len(WorkerCandleSnapshot(**snapshot).candles) == 501
+    with pytest.raises(ValidationError):
+        WorkerCandleSnapshot(
+            **{
+                **snapshot,
+                "candles": [*candles, {**candles[-1], "time": start + timedelta(hours=501)}],
+            }
+        )
+
+
+def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticated(monkeypatch, sqlite_database):
     previous_state = runtime_store.state
     key = Fernet.generate_key()
     cipher = Fernet(key)
@@ -150,17 +187,43 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
         assert positions["items"][0]["ticket"] == "98765"
         assert positions["items"][0]["profit"] == "10.00"
         assert positions["simulated"] is False
+        duplicate_status = client.post(
+            "/api/v1/worker/mt5/status",
+            headers=headers,
+            json={
+                "connected": True,
+                "account_id": "123456",
+                "server": "Exness-MT5Demo",
+                "environment": "demo",
+                "history_deals": [{
+                    "ticket": "88776",
+                    "order": "98765",
+                    "symbol": "EURUSDm",
+                    "direction": "BUY",
+                    "volume": "0.10",
+                    "price": "1.09900",
+                    "profit": "10.00",
+                    "commission": "-0.50",
+                    "swap": "0",
+                    "time": "2026-11-23T14:00:00+00:00",
+                    "simulated": False,
+                }],
+                "message": "MT5 demo connected; trading remains paper-only",
+            },
+        )
+        assert duplicate_status.status_code == 200
+        runtime_store.state = replace(runtime_store.state, history_deals=())
         history = client.get("/api/v1/history").json()
         assert history["total"] == 1
         assert history["items"][0]["ticket"] == "88776"
-        assert history["items"][0]["commission"] == "-0.50"
-        assert history["items"][0]["net_profit"] == "9.50"
+        assert Decimal(history["items"][0]["commission"]) == Decimal("-0.50")
+        assert Decimal(history["items"][0]["net_profit"]) == Decimal("9.50")
         assert history["simulated"] is False
     finally:
         runtime_store.state = previous_state
 
 
-def test_live_mt5_requires_explicit_readonly_confirmation_and_never_starts_engine(monkeypatch):
+def test_live_mt5_requires_explicit_readonly_confirmation_and_never_starts_engine(monkeypatch, sqlite_database):
     previous_state = runtime_store.state
     cipher = Fernet(Fernet.generate_key())
     worker_token = "live-test-worker-token"

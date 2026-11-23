@@ -1,6 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import hashlib
+import math
 import uuid
 
 from shared.contracts.broker import AccountInfo, BrokerResponse, Candle, SymbolInfo, Tick
@@ -11,6 +12,16 @@ class SimulationAdapter(BrokerConnector):
     """Deterministic, clearly simulated broker for Linux development and tests."""
 
     SYMBOLS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD")
+    REFERENCE_PRICES = {
+        "EURUSD": Decimal("1.08500"),
+        "GBPUSD": Decimal("1.27000"),
+        "USDJPY": Decimal("150.000"),
+        "USDCHF": Decimal("0.88000"),
+        "USDCAD": Decimal("1.37000"),
+        "AUDUSD": Decimal("0.66000"),
+        "NZDUSD": Decimal("0.61000"),
+        "XAUUSD": Decimal("2300.00"),
+    }
 
     def __init__(self) -> None:
         self._connected = False
@@ -82,16 +93,35 @@ class SimulationAdapter(BrokerConnector):
         if minutes is None:
             raise ValueError(f"Unsupported timeframe: {timeframe}")
         candles: list[Candle] = []
-        current = start
-        index = 0
-        base = Decimal("1950") if symbol == "XAUUSD" else Decimal("100") if symbol.endswith("JPY") else Decimal("1.10000")
+        interval = minutes * 60
+        current = datetime.fromtimestamp(int(start.timestamp() // interval) * interval, UTC)
+        index = int(current.timestamp() // interval)
+        base = self.REFERENCE_PRICES[symbol]
+        phase = int(hashlib.sha256(f"{symbol}:{timeframe}".encode()).hexdigest()[:8], 16) / 0xFFFFFFFF * math.tau
+        scale = base * Decimal("0.0008") * Decimal(str(math.sqrt(max(minutes / 60, 0.1))))
+
+        def noise(bar_index: int, salt: str) -> float:
+            digest = hashlib.sha256(f"{symbol}:{timeframe}:{bar_index}:{salt}".encode()).hexdigest()[:8]
+            return int(digest, 16) / 0xFFFFFFFF
+
+        def price_at(bar_index: int) -> Decimal:
+            wave = (
+                0.75 * math.sin(bar_index / 67 + phase)
+                + 0.35 * math.sin(bar_index / 19 + phase * 1.7)
+                + 0.15 * math.sin(bar_index / 4.7 + phase * 2.3)
+                + (noise(bar_index, "price") - 0.5) * 0.44
+            )
+            return (base + scale * Decimal(str(wave))).quantize(info.tick_size)
+
         while current <= end:
-            drift = Decimal((index % 20) - 10).scaleb(-info.digits)
-            close = (base + drift).quantize(info.tick_size)
-            open_price = (close - Decimal("0.00002") if info.digits == 5 else close - info.tick_size).quantize(info.tick_size)
-            high = max(open_price, close) + info.tick_size
-            low = min(open_price, close) - info.tick_size
-            candles.append(Candle(symbol, timeframe, current, open_price, high, low, close, Decimal("100")))
+            open_price = price_at(index)
+            close = price_at(index + 1)
+            high_wick = scale * Decimal(str(0.08 + noise(index, "high") * 0.42))
+            low_wick = scale * Decimal(str(0.08 + noise(index, "low") * 0.42))
+            high = (max(open_price, close) + high_wick).quantize(info.tick_size)
+            low = (min(open_price, close) - low_wick).quantize(info.tick_size)
+            volume = Decimal(str(round(70 + noise(index, "volume") * 230)))
+            candles.append(Candle(symbol, timeframe, current, open_price, high, low, close, volume))
             current += timedelta(minutes=minutes)
             index += 1
         return candles

@@ -126,10 +126,12 @@ Status: implemented and validated for simulation quotes and the MT5 worker feed.
 
 Status: implemented for simulation and worker-fed MT5 candle data.
 
-- Signals page can generate strategy candidates by instrument and timeframe
+- Signals page supports scanning one selected timeframe or all M5, M15, M30, H1, H4 and D1 intervals
 - Displays entry, stop, three targets, reward/risk, quality and validation details
+- Scans return only validated setups, report rejected candidates, and format displayed reward/risk to two decimals; an empty scan is a successful result, not a service error
 - Signal list refreshes periodically and identifies each signal's data source
 - Uses broker candles and MT5 tick-size metadata when MT5 is selected; never substitutes simulated candles for a missing MT5 feed
+- MT5 scans skip timeframes with unavailable candle history and report those gaps without simulation fallback
 - API reports validated signals as expired after their four-hour validity window
 - Verification: 33 backend tests pass; frontend production build and focused lint pass
 
@@ -162,7 +164,7 @@ Status: implemented for simulation candles and worker-fed MT5 candle history.
 - Uses MT5 worker candles when an MT5 account is selected and simulation candles otherwise
 - Analysis refuses to fall back to simulation when the selected MT5 feed is stale or lacks the requested candle history
 - UI labels the data source and reports missing MT5 timeframes
-- Performance analytics remain unavailable until trade history is persisted and reconciled
+- Performance analytics remain unavailable until broker deals are reconciled into trades and daily aggregates
 - Verification: analysis API tests pass; frontend production build and focused lint pass
 
 ## Phase 11 — MT5 deal history
@@ -171,6 +173,7 @@ Status: read-only worker handoff and dashboard view implemented.
 
 - Windows MT5 worker reports up to 500 deals from the last 30 days
 - API validates deal snapshots and computes net profit using Decimal profit, commission and swap fields
+- PostgreSQL persists deal tickets idempotently per account, server and environment; repeated worker heartbeats do not duplicate records
 - History page shows deal/order IDs, side, volume, price and P/L breakdown
 - Raw MT5 deals are explicitly distinguished from strategy-attributed or reconciled application trades
 - Simulation history remains empty until simulated executions are persisted
@@ -184,14 +187,18 @@ Status: read-only worker handoff and dashboard view implemented.
 
 ## Phase 12 — Strategy backtesting
 
-Status: simulation-only candle replay implemented.
+Status: interactive candle replay implemented for the simulation account and connected MT5 history.
 
-- Backtest API replays selected strategies over completed generated candles and returns trade outcomes plus R-based metrics
+- Backtest API replays selected strategies over completed candles and returns OHLCV data plus trade outcomes and R-based metrics
+- Connected MT5 accounts use read-only broker candles and broker tick-size metadata; missing or stale history returns an error instead of falling back to generated data
+- Interactive candlestick chart supports play/pause, stepping, speed selection and a replay position slider; future metrics remain hidden until playback completes
+- Completed replays show average R per trade and a realized-equity curve with cumulative R and drawdown after each closed trade
+- The Windows worker sends up to 501 bars per symbol/timeframe so a replay can use up to 500 completed bars while excluding the forming bar
 - Entry is modeled at the signal candle close; TP3 or stop loss exits are checked on following candles
 - Ambiguous candles where both exit levels are touched conservatively assume stop loss first
 - Spread, slippage, commissions, partial exits and portfolio risk are explicitly not modeled
 - No broker or paper orders are submitted
-- Verification: 42 backend tests pass; frontend production build and focused lint pass; API route works through the dashboard proxy
+- Verification: 4 backtest engine tests and 5 backtest API tests pass; focused component lint and TypeScript checks pass
 
 ## Multi-timeframe technical analysis
 
@@ -203,15 +210,16 @@ Status: simulation-only candle replay implemented.
 
 - Strategies page documents the implemented trend-following and breakout/retest entry rules
 - Displays shared stop, reward/risk and expiry guardrails
-- Links to signal generation and backtesting; no strategy is presented as an automated broker executor
+- Links to signal generation and preselects the chosen strategy on the backtesting page
+- No strategy is presented as an automated broker executor
 
 ## MT5 historical candle feed
 
-- Windows worker sends up to 260 completed/current OHLCV bars for each monitored symbol and supported timeframe, along with broker tick-size metadata
+- Windows worker sends up to 501 OHLCV bars for each monitored symbol and supported timeframe, along with broker tick-size metadata
 - Candle snapshots are refreshed once per minute and validated for OHLC consistency and chronological ordering
 - Analysis and signal generation use broker candles while MT5 is selected; a disconnected or incomplete worker feed returns an explicit error instead of silently analyzing simulation data
-- Backtesting remains simulation-only and is labeled separately
-- Verification: 36 backend tests passed; frontend build and focused lint passed; Compose configuration is valid
+- Backtesting uses up to 500 completed MT5 candles when the broker is selected; simulation candles require an explicitly connected simulation account
+- Verification: full backend suite, frontend production build and focused lint passed
 - Real broker history delivery still requires validating the updated worker on Windows with an installed MT5 terminal
 
 ## Authentication

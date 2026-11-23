@@ -27,13 +27,24 @@ type Signal = {
 const symbols = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD"];
 const timeframes = ["M5", "M15", "M30", "H1", "H4", "D1"];
 
+function formatRiskReward(value?: string): string {
+  if (!value) return "—";
+  const ratio = Number(value);
+  return Number.isFinite(ratio) ? `${ratio.toFixed(2)}:1` : "—";
+}
+
+function signalKey(signal: Signal): string {
+  return signal.signal_id ?? `${signal.symbol}-${signal.timeframe}-${signal.strategy}-${signal.created_at}`;
+}
+
 export function SignalsPanel() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [symbol, setSymbol] = useState("EURUSD");
-  const [timeframe, setTimeframe] = useState("H1");
+  const [timeframe, setTimeframe] = useState("ALL");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [generationMessage, setGenerationMessage] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -43,7 +54,7 @@ export function SignalsPanel() {
         if (!response.ok) throw new Error("Unable to load trading signals");
         const result = await response.json() as { items: Signal[] };
         if (active) {
-          setSignals(result.items);
+          setSignals(result.items.filter((signal) => signal.status !== "REJECTED"));
           setError("");
         }
       } catch (cause) {
@@ -65,15 +76,50 @@ export function SignalsPanel() {
     event.preventDefault();
     setBusy(true);
     setError("");
+    setGenerationMessage("");
     try {
       const params = new URLSearchParams({ symbol, timeframe });
       const response = await fetch(`/api/v1/signals/generate?${params}`, { method: "POST" });
-      const result = await response.json();
+      const result = await response.json() as {
+        items?: unknown;
+        detail?: string;
+        scanned_timeframes?: unknown;
+        unavailable_timeframes?: unknown;
+        rejected_candidates?: unknown;
+      };
       if (!response.ok) throw new Error(result.detail ?? "Signal generation failed");
-      const listResponse = await fetch("/api/v1/signals", { cache: "no-store" });
-      if (!listResponse.ok) throw new Error("Signals generated, but could not refresh the signal list");
-      const list = await listResponse.json() as { items: Signal[] };
-      setSignals(list.items);
+      if (
+        !Array.isArray(result.items)
+        || !Array.isArray(result.scanned_timeframes)
+        || !Array.isArray(result.unavailable_timeframes)
+        || typeof result.rejected_candidates !== "number"
+      ) {
+        throw new Error("Signal service returned an invalid result");
+      }
+      const generated = result.items as Signal[];
+      if (generated.some((signal) => signal.status !== "VALIDATED")) {
+        throw new Error("Signal service returned a non-validated setup");
+      }
+      const scannedTimeframes = result.scanned_timeframes as string[];
+      const unavailableTimeframes = result.unavailable_timeframes as string[];
+      const rejectedCandidates = result.rejected_candidates;
+      setSignals((current) => {
+        const nextByKey = new Map<string, Signal>();
+        for (const signal of [...current.filter((item) => item.status !== "REJECTED"), ...generated]) {
+          nextByKey.set(signalKey(signal), signal);
+        }
+        return [...nextByKey.values()].slice(-100);
+      });
+      const scope = scannedTimeframes.join(", ");
+      const rejectionNote = rejectedCandidates > 0
+        ? ` ${rejectedCandidates} candidate${rejectedCandidates === 1 ? "" : "s"} did not pass validation.`
+        : "";
+      const unavailableNote = unavailableTimeframes.length > 0
+        ? ` MT5 history was unavailable for ${unavailableTimeframes.join(", ")}; those timeframes were skipped without simulation fallback.`
+        : "";
+      setGenerationMessage(generated.length === 0
+        ? `Scan complete: 0 validated setups for ${symbol} across ${scope}.${rejectionNote}${unavailableNote}`
+        : `Scan complete: found ${generated.length} validated signal${generated.length === 1 ? "" : "s"} for ${symbol} across ${scope}.${rejectionNote}${unavailableNote}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Signal generation failed");
     } finally {
@@ -114,14 +160,34 @@ export function SignalsPanel() {
           <label>
             <span>Timeframe</span>
             <select value={timeframe} onChange={(event) => setTimeframe(event.target.value)}>
+              <option value="ALL">All timeframes</option>
               {timeframes.map((item) => <option key={item} value={item}>{item}</option>)}
             </select>
           </label>
           <button className="primary-button" type="submit" disabled={busy}>
-            {busy ? "Analyzing..." : "Generate signals"}
+            {busy ? "Scanning..." : timeframe === "ALL" ? "Scan all timeframes" : `Scan ${timeframe}`}
           </button>
         </form>
         {error && <p className="error-text" role="alert">{error}</p>}
+        {generationMessage && <p className="signal-scan-result" role="status">{generationMessage}</p>}
+      </section>
+
+      <section className="signal-kpis" aria-label="Signal overview">
+        <article className="card signal-kpi">
+          <span>Active setups</span>
+          <strong>{validatedCount}</strong>
+          <small>Validated and unexpired</small>
+        </article>
+        <article className="card signal-kpi">
+          <span>Expired</span>
+          <strong>{expiredCount}</strong>
+          <small>Past the four-hour validity window</small>
+        </article>
+        <article className="card signal-kpi">
+          <span>Scan scope</span>
+          <strong>{timeframe === "ALL" ? "6 frames" : timeframe}</strong>
+          <small>{timeframe === "ALL" ? "M5 through D1" : "Selected interval"}</small>
+        </article>
       </section>
 
       <section className="card signal-list">
@@ -132,12 +198,12 @@ export function SignalsPanel() {
         {loading && signals.length === 0 ? (
           <div className="empty signal-empty">Loading signals...</div>
         ) : signals.length === 0 ? (
-          <div className="empty signal-empty">No signals yet. Generate candidates to get started.</div>
+          <div className="empty signal-empty">{generationMessage ? "No validated signals in the displayed history." : "No signals yet. Run a scan to get started."}</div>
         ) : (
           <div className="signal-table-wrap">
             <table className="table signal-table">
               <thead>
-                <tr><th>Market</th><th>Direction</th><th>Entry / stop</th><th>Targets</th><th>R:R (TP3)</th><th>Quality</th><th>Status</th><th>Details</th></tr>
+                <tr><th>Market</th><th>Direction</th><th>Entry / stop</th><th>Targets</th><th>R:R · TP3</th><th>Quality</th><th>Status</th><th>Details</th></tr>
               </thead>
               <tbody>
                 {signals.map((signal, index) => (
@@ -146,8 +212,8 @@ export function SignalsPanel() {
                     <td><span className={`signal-direction ${signal.direction === "BUY" ? "buy-direction" : signal.direction === "SELL" ? "sell-direction" : ""}`}>{signal.direction ?? "—"}</span></td>
                     <td>{signal.entry ? <>{signal.entry}<span className="signal-meta">SL {signal.stop_loss}</span></> : "—"}</td>
                     <td>{signal.tp1 ? <>{signal.tp1}<span className="signal-meta">TP2 {signal.tp2} · TP3 {signal.tp3}</span></> : "—"}</td>
-                    <td>{signal.risk_reward_ratio ?? "—"}</td>
-                    <td>{signal.quality_score ?? "—"}</td>
+                    <td><span className="signal-ratio">{formatRiskReward(signal.risk_reward_ratio)}</span></td>
+                    <td><span className="signal-quality">{signal.quality_score ?? "—"}</span></td>
                     <td><span className={`signal-status ${signal.status.toLowerCase()}`}>{signal.status}</span></td>
                     <td className="signal-reason">{signal.rejection_reason ?? signal.explanation ?? ""}</td>
                   </tr>

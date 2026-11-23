@@ -1,15 +1,20 @@
 import hmac
 import json
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from datetime import datetime
 from typing import Literal
 
-from fastapi import APIRouter, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field, SecretStr, model_validator
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
 from app.core.broker import simulation_adapter
 from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.runtime import runtime_store
+from app.models.trade_deal import TradeDeal
 
 router = APIRouter(tags=["broker"])
 
@@ -110,6 +115,12 @@ class WorkerDealSnapshot(BaseModel):
     time: datetime
     simulated: bool = False
 
+    @model_validator(mode="after")
+    def validate_deal_time(self) -> "WorkerDealSnapshot":
+        if self.time.tzinfo is None or self.time.utcoffset() is None:
+            raise ValueError("Deal timestamps must include a timezone")
+        return self
+
 
 class WorkerCandle(BaseModel):
     time: datetime
@@ -132,7 +143,7 @@ class WorkerCandleSnapshot(BaseModel):
     base_symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
     symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
     timeframe: Literal["M5", "M15", "M30", "H1", "H4", "D1"]
-    candles: list[WorkerCandle] = Field(min_length=2, max_length=260)
+    candles: list[WorkerCandle] = Field(min_length=2, max_length=501)
 
     @model_validator(mode="after")
     def validate_chronological_order(self) -> "WorkerCandleSnapshot":
@@ -156,6 +167,12 @@ class WorkerStatusUpdate(BaseModel):
     history_deals: list[WorkerDealSnapshot] = Field(default_factory=list, max_length=500)
 
 
+def _format_decimal(value: Decimal) -> str:
+    if value.is_zero():
+        return "0"
+    return format(value.normalize(), "f")
+
+
 @router.post("/worker/mt5/claim", response_model=None)
 def claim_mt5_credentials(authorization: str | None = Header(default=None)) -> dict | Response:
     require_worker(authorization)
@@ -169,12 +186,55 @@ def claim_mt5_credentials(authorization: str | None = Header(default=None)) -> d
     return credentials
 
 
-@router.post("/worker/mt5/status")
+@router.post("/worker/mt5/status", dependencies=[Depends(require_worker)])
 def update_mt5_status(
     payload: WorkerStatusUpdate,
-    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
 ) -> dict:
-    require_worker(authorization)
+    configured = runtime_store.state
+    if (
+        configured.broker != "mt5"
+        or configured.account_id != payload.account_id
+        or configured.server != payload.server
+        or configured.environment != payload.environment
+    ):
+        raise HTTPException(status_code=409, detail="Worker status does not match the configured MT5 account")
+    if payload.connected and payload.history_deals:
+        tickets = {deal.ticket for deal in payload.history_deals}
+        existing_tickets = set(db.scalars(
+            select(TradeDeal.ticket).where(
+                TradeDeal.account_id == payload.account_id,
+                TradeDeal.server == payload.server,
+                TradeDeal.environment == payload.environment,
+                TradeDeal.ticket.in_(tickets),
+            )
+        ).all())
+        new_deals = []
+        for deal in payload.history_deals:
+            if deal.ticket in existing_tickets:
+                continue
+            existing_tickets.add(deal.ticket)
+            new_deals.append(
+                TradeDeal(
+                    account_id=payload.account_id,
+                    server=payload.server,
+                    environment=payload.environment,
+                    ticket=deal.ticket,
+                    order_ticket=deal.order,
+                    symbol=deal.symbol,
+                    direction=deal.direction,
+                    volume=deal.volume,
+                    price=deal.price,
+                    profit=deal.profit,
+                    commission=deal.commission,
+                    swap=deal.swap,
+                    deal_time=deal.time,
+                    simulated=deal.simulated,
+                )
+            )
+        if new_deals:
+            db.add_all(new_deals)
+            db.commit()
     try:
         state = runtime_store.update_mt5_status(
             connected=payload.connected,
@@ -367,19 +427,41 @@ def positions() -> dict:
 
 
 @router.get("/history")
-def account_history() -> dict:
+def account_history(db: Session = Depends(get_db)) -> dict:
     state = runtime_store.state
     connected = runtime_store.broker_connected()
     items = []
     if connected and state.broker == "mt5":
-        for deal in state.history_deals[-500:]:
-            item = dict(deal)
-            item["net_profit"] = str(
-                Decimal(str(item["profit"]))
-                + Decimal(str(item["commission"]))
-                + Decimal(str(item["swap"]))
+        deals = db.scalars(
+            select(TradeDeal)
+            .where(
+                TradeDeal.account_id == state.account_id,
+                TradeDeal.server == state.server,
+                TradeDeal.environment == state.environment,
+                TradeDeal.deal_time >= datetime.now(UTC) - timedelta(days=30),
             )
-            items.append(item)
+            .order_by(TradeDeal.deal_time.desc())
+            .limit(500)
+        ).all()
+        for deal in deals:
+            deal_time = deal.deal_time
+            if deal_time.tzinfo is None:
+                deal_time = deal_time.replace(tzinfo=UTC)
+            net_profit = deal.profit + deal.commission + deal.swap
+            items.append({
+                "ticket": deal.ticket,
+                "order": deal.order_ticket,
+                "symbol": deal.symbol,
+                "direction": deal.direction,
+                "volume": _format_decimal(deal.volume),
+                "price": _format_decimal(deal.price),
+                "profit": _format_decimal(deal.profit),
+                "commission": _format_decimal(deal.commission),
+                "swap": _format_decimal(deal.swap),
+                "net_profit": _format_decimal(net_profit),
+                "time": deal_time.isoformat(),
+                "simulated": deal.simulated,
+            })
     return {
         "items": items,
         "total": len(items),

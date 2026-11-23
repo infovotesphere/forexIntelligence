@@ -32,9 +32,16 @@ export function StatusBar() {
   }
 
   useEffect(() => {
-    refresh();
-    const interval = window.setInterval(refresh, 5000);
-    return () => window.clearInterval(interval);
+    const initialRefresh = window.setTimeout(() => {
+      void refresh();
+    }, 0);
+    const interval = window.setInterval(() => {
+      void refresh();
+    }, 5000);
+    return () => {
+      window.clearTimeout(initialRefresh);
+      window.clearInterval(interval);
+    };
   }, []);
 
   return (

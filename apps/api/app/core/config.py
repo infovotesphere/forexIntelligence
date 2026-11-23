@@ -3,7 +3,15 @@ from pathlib import Path
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+MODULE_PATH = Path(__file__).resolve()
+REPOSITORY_ROOT = next(
+    (
+        ancestor
+        for ancestor in MODULE_PATH.parents
+        if (ancestor / "docker-compose.yml").exists() or (ancestor / ".env").exists()
+    ),
+    MODULE_PATH.parents[2] if len(MODULE_PATH.parents) > 2 else MODULE_PATH.parent,
+)
 
 
 class Settings(BaseSettings):

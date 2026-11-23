@@ -1,6 +1,8 @@
 import { Page } from "@/components/Page";
 import { ConnectionControls } from "@/components/ConnectionControls";
 import { MT5ConnectionForm } from "@/components/MT5ConnectionForm";
+export const instant = false;
+
 export default function Settings() {
   return (
     <Page title="Settings" description="Broker, account and system configuration" active="/settings">

@@ -36,6 +36,22 @@ def test_simulation_historical_candles_are_completed_range():
     assert all(candle.high >= candle.low for candle in candles)
 
 
+def test_simulation_historical_candles_include_bullish_and_bearish_bars():
+    adapter = SimulationAdapter()
+    adapter.connect()
+    start = datetime(2026, 1, 1, 0, 45, tzinfo=UTC)
+
+    candles = adapter.get_historical_candles("EURUSD", "H1", start, start + timedelta(hours=80))
+    directions = {candle.close > candle.open for candle in candles}
+
+    assert directions == {False, True}
+    assert candles[0].time == datetime(2026, 1, 1, tzinfo=UTC)
+    assert all(candle.time.minute == 0 for candle in candles)
+    assert all(candle.low < min(candle.open, candle.close) for candle in candles)
+    assert all(candle.high > max(candle.open, candle.close) for candle in candles)
+    assert len({candle.volume for candle in candles}) > 1
+
+
 def test_simulation_requires_stop_loss_and_is_idempotent():
     adapter = SimulationAdapter()
     adapter.connect()

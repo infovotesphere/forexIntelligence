@@ -2,6 +2,8 @@ import { Page } from "@/components/Page";
 import { ConnectionControls } from "@/components/ConnectionControls";
 import { DashboardOverview } from "@/components/DashboardOverview";
 
+export const instant = false;
+
 export default function Dashboard() {
   return (
     <Page title="Trading overview" description="Live account and trading performance" active="/dashboard">
