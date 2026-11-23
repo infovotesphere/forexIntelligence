@@ -23,7 +23,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         route = path.removeprefix(api_prefix)
-        if route in {"/auth/login", "/auth/logout"} or route.startswith("/worker/mt5/"):
+        if route in {"/auth/login", "/auth/logout", "/health"} or route.startswith("/worker/mt5/"):
             return await call_next(request)
 
         token = request.cookies.get(AUTH_COOKIE_NAME)

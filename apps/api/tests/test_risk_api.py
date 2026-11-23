@@ -9,6 +9,19 @@ from app.main import app
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
+def test_risk_policy_exposes_safe_defaults():
+    response = client.get("/api/v1/risk/policy")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["max_risk_per_trade_percent"] == "1"
+    assert body["max_daily_loss_percent"] == "3"
+    assert body["max_weekly_loss_percent"] == "6"
+    assert body["max_simultaneous_positions"] == 3
+    assert body["max_aggregate_open_risk_percent"] == "2"
+    assert body["martingale_allowed"] is False
+    assert body["grid_allowed"] is False
+
+
 def test_position_size_rounds_down_to_volume_step_and_stays_within_risk():
     client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
     response = client.post(

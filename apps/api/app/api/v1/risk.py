@@ -4,9 +4,25 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.broker import simulation_adapter
+from app.core.config import get_settings
 from app.core.runtime import runtime_store
 
 router = APIRouter(prefix="/risk", tags=["risk"])
+
+
+@router.get("/policy")
+def get_risk_policy() -> dict:
+    settings = get_settings()
+    return {
+        "max_risk_per_trade_percent": "1",
+        "max_daily_loss_percent": str(settings.max_daily_loss_percent),
+        "max_weekly_loss_percent": str(settings.max_weekly_loss_percent),
+        "max_simultaneous_positions": settings.max_simultaneous_positions,
+        "max_aggregate_open_risk_percent": str(settings.max_aggregate_open_risk_percent),
+        "martingale_allowed": False,
+        "grid_allowed": False,
+        "live_trading_enabled": settings.live_trading_enabled,
+    }
 
 
 class PositionSizeRequest(BaseModel):

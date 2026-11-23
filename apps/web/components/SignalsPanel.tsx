@@ -45,6 +45,8 @@ export function SignalsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [generationMessage, setGenerationMessage] = useState("");
+  const [realtime, setRealtime] = useState<{ enabled: boolean; connected: boolean; interval_seconds: number; last_scan_at: string | null; last_scan_error: string | null; history_count: number } | null>(null);
+  const [historyOnly, setHistoryOnly] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +55,8 @@ export function SignalsPanel() {
         const response = await fetch("/api/v1/signals", { cache: "no-store" });
         if (!response.ok) throw new Error("Unable to load trading signals");
         const result = await response.json() as { items: Signal[] };
+        const realtimeResponse = await fetch("/api/v1/signals/realtime/status", { cache: "no-store" });
+        if (realtimeResponse.ok) setRealtime(await realtimeResponse.json());
         if (active) {
           setSignals(result.items.filter((signal) => signal.status !== "REJECTED"));
           setError("");
@@ -65,7 +69,7 @@ export function SignalsPanel() {
     }
 
     void loadSignals();
-    const timer = window.setInterval(loadSignals, 30000);
+    const timer = window.setInterval(loadSignals, 15000);
     return () => {
       active = false;
       window.clearInterval(timer);
@@ -131,6 +135,9 @@ export function SignalsPanel() {
   const expiredCount = signals.filter((signal) => signal.status === "EXPIRED").length;
   const hasMt5Signals = signals.some((signal) => signal.data_source === "mt5" || signal.simulated === false);
   const hasSimulationSignals = signals.some((signal) => signal.data_source === "simulation" || signal.simulated !== false);
+  const displayedSignals = historyOnly
+    ? signals
+    : signals.filter((signal) => signal.status === "VALIDATED");
   const sourceLabel = signals.length === 0
     ? "No signal history"
     : hasMt5Signals && hasSimulationSignals
@@ -142,8 +149,13 @@ export function SignalsPanel() {
   return (
     <div className="signals-content">
       <div className="signal-warning" role="note">
-        <strong>Broker-aware analysis · no execution</strong>
-        <span>Uses MT5 worker candle history when an MT5 account is selected; otherwise uses generated simulation candles. Signals never place orders.</span>
+        <strong>{realtime?.connected ? "Realtime scanning active" : "Realtime scanning waiting for a broker"}</strong>
+        <span>
+          {realtime?.connected
+            ? `Automatic broker-aware scan every ${realtime.interval_seconds} seconds${realtime.last_scan_at ? ` · last scan ${new Date(realtime.last_scan_at).toLocaleTimeString()}` : ""}.`
+            : "Connect a simulation or MT5 account to start automatic signal scanning. Signals never place orders."}
+          {realtime?.last_scan_error ? ` Last scan issue: ${realtime.last_scan_error}` : ""}
+        </span>
       </div>
       <section className="card panel signal-controls">
         <div>
@@ -179,6 +191,11 @@ export function SignalsPanel() {
           <small>Validated and unexpired</small>
         </article>
         <article className="card signal-kpi">
+          <span>History</span>
+          <strong>{realtime?.history_count ?? signals.length}</strong>
+          <small>Validated signals retained in this session</small>
+        </article>
+        <article className="card signal-kpi">
           <span>Expired</span>
           <strong>{expiredCount}</strong>
           <small>Past the four-hour validity window</small>
@@ -192,13 +209,17 @@ export function SignalsPanel() {
 
       <section className="card signal-list">
         <div className="signal-list-heading">
-          <div><h2>Recent signals</h2><p>{validatedCount} active · {expiredCount} expired</p></div>
-        <span className="pill">{sourceLabel}</span>
+          <div><h2>{historyOnly ? "Signal history" : "Recent active signals"}</h2><p>{validatedCount} active · {expiredCount} expired</p></div>
+          <div className="button-row">
+            <button type="button" className={historyOnly ? "secondary-button" : "primary-button"} onClick={() => setHistoryOnly(false)}>Active</button>
+            <button type="button" className={historyOnly ? "primary-button" : "secondary-button"} onClick={() => setHistoryOnly(true)}>History</button>
+            <span className="pill">{sourceLabel}</span>
+          </div>
         </div>
         {loading && signals.length === 0 ? (
           <div className="empty signal-empty">Loading signals...</div>
-        ) : signals.length === 0 ? (
-          <div className="empty signal-empty">{generationMessage ? "No validated signals in the displayed history." : "No signals yet. Run a scan to get started."}</div>
+        ) : displayedSignals.length === 0 ? (
+          <div className="empty signal-empty">{historyOnly ? "No signal history recorded yet." : "No active validated signals."}</div>
         ) : (
           <div className="signal-table-wrap">
             <table className="table signal-table">
@@ -206,7 +227,7 @@ export function SignalsPanel() {
                 <tr><th>Market</th><th>Direction</th><th>Entry / stop</th><th>Targets</th><th>R:R · TP3</th><th>Quality</th><th>Status</th><th>Details</th></tr>
               </thead>
               <tbody>
-                {signals.map((signal, index) => (
+                {displayedSignals.map((signal, index) => (
                   <tr key={signal.signal_id ?? `${signal.symbol}-${signal.created_at}-${index}`}>
                     <td><strong>{signal.symbol}</strong><span className="signal-meta">{signal.strategy} · {signal.timeframe} · {signal.data_source === "mt5" || signal.simulated === false ? "MT5" : "SIM"}</span></td>
                     <td><span className={`signal-direction ${signal.direction === "BUY" ? "buy-direction" : signal.direction === "SELL" ? "sell-direction" : ""}`}>{signal.direction ?? "—"}</span></td>

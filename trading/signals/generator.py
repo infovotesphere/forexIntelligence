@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
-from uuid import uuid4
+from hashlib import sha256
 
 from trading.strategies.base import StrategySignal
 from trading.signals.validator import round_to_tick, validate_signal
@@ -48,8 +48,19 @@ def generate_validated_signals(
         stop = prices["stop_loss"]
         risk = entry - stop if candidate.direction == "BUY" else stop - entry
         reward = prices["take_profit_3"] - entry if candidate.direction == "BUY" else entry - prices["take_profit_3"]
+        signal_fingerprint = "|".join((
+            symbol,
+            timeframe,
+            candidate.strategy,
+            candidate.direction,
+            str(entry),
+            str(stop),
+            str(prices["take_profit_1"]),
+            str(prices["take_profit_2"]),
+            str(prices["take_profit_3"]),
+        ))
         results.append({
-            "signal_id": str(uuid4()),
+            "signal_id": sha256(signal_fingerprint.encode("utf-8")).hexdigest(),
             "symbol": symbol,
             "direction": candidate.direction,
             "strategy": candidate.strategy,

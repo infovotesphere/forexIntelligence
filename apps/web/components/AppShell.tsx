@@ -8,7 +8,7 @@ const nav = [
   ["Orders", "/orders", "≡"], ["History", "/history", "◷"],
   ["Analytics", "/analytics", "⌗"], ["Strategies", "/strategies", "◆"],
   ["Risk", "/risk", "◉"], ["Backtesting", "/backtesting", "⟳"],
-  ["Notifications", "/notifications", "↗"], ["Settings", "/settings", "⚙"],
+  ["Notifications", "/notifications", "↗"], ["System", "/system", "◎"], ["Settings", "/settings", "⚙"],
 ];
 
 export function AppShell({ children, active = "/dashboard" }: { children: React.ReactNode; active?: string }) {

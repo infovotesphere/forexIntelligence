@@ -14,6 +14,7 @@ from app.core.credential_encryption import CredentialEncryptionError, decrypt_cr
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.runtime import runtime_store
+from app.core.persistent_runtime import save_runtime_state
 from app.models.trade_deal import TradeDeal
 
 router = APIRouter(tags=["broker"])
@@ -57,6 +58,7 @@ def connect_account(payload: DemoConnectRequest) -> dict:
             payload.environment,
             encrypted,
         )
+    save_runtime_state()
     return {
         "connected": state.mt5_connected,
         "environment": state.environment,
@@ -73,6 +75,7 @@ def connect_account(payload: DemoConnectRequest) -> dict:
 @router.post("/accounts/disconnect")
 def disconnect_account() -> dict:
     state = runtime_store.disconnect()
+    save_runtime_state()
     return {"connected": False, "environment": "demo", "broker": state.broker, "account_id": "",
             "engine_running": False, "live_trading_enabled": False, "simulated": False,
             "message": state.message}
@@ -276,6 +279,7 @@ def engine_status() -> dict:
 @router.post("/engine/start")
 def start_engine() -> dict:
     state = runtime_store.start_engine()
+    save_runtime_state()
     return {"running": state.engine_running, "broker_connected": runtime_store.broker_connected(),
             "environment": state.environment, "live_trading_enabled": False,
             "message": state.message}
@@ -284,6 +288,7 @@ def start_engine() -> dict:
 @router.post("/engine/stop")
 def stop_engine() -> dict:
     state = runtime_store.stop_engine()
+    save_runtime_state()
     return {"running": False, "broker_connected": runtime_store.broker_connected(),
             "environment": state.environment, "live_trading_enabled": False,
             "message": state.message}

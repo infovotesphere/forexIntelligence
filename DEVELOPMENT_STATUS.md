@@ -213,6 +213,69 @@ Status: interactive candle replay implemented for the simulation account and con
 - Links to signal generation and preselects the chosen strategy on the backtesting page
 - No strategy is presented as an automated broker executor
 
+## System health status
+
+Status: real runtime health probes and dashboard status view implemented.
+
+- Health endpoint probes PostgreSQL/SQLite database connectivity and Redis availability
+- System page displays API, database, Redis, broker, MT5 worker, engine and live-trading state
+- Status refreshes every 10 seconds and is read-only
+- Live trading remains independently disabled and cannot be changed from the dashboard
+- Health tests and frontend production build pass
+
+## Automatic realtime signals
+
+Status: server-side realtime scanning and browser history controls implemented.
+
+- API scans configured symbols every 30 seconds while a broker account is connected
+- Stable signal fingerprints deduplicate repeated generated setups
+- Active and history views separate live validated setups from expired retained signals
+- Signals history refreshes every 15 seconds and remains read-only
+- Simulation and MT5 source safeguards remain unchanged; no orders are submitted
+- Signal engine/API tests pass
+- Validated signals persist in PostgreSQL with stable-ID deduplication
+- Alembic migration `20261123_003` creates the `trading_signals` history table
+
+## Configurable risk policy
+
+Status: policy values are environment-configured and displayed for safe operations.
+
+- API exposes maximum daily/weekly loss, open-position count and aggregate open-risk policy
+- Docker Compose provides defaults of 3%, 6%, 3 positions and 2% aggregate open risk
+- Risk page retains a 0.1–1% per-trade control and prohibits Martingale/grid strategy modes
+- Live trading permission remains independently disabled and cannot be changed from this page
+- Focused risk tests, frontend lint and production build pass
+
+## Configurable position risk
+
+Status: implemented within the existing 1% maximum safety ceiling.
+
+- Risk page exposes a 0.1–1% risk-per-trade control
+- Backend recalculates the dollar risk budget and volume down to broker volume steps
+- API rejects position sizing above 1% and keeps estimates read-only
+- Focused risk API tests and frontend production build pass
+
+## Telegram notifications
+
+Status: configuration status and test delivery implemented.
+
+- Notifications page reports whether Telegram environment credentials are configured
+- Bot token is never returned to the browser; chat ID is masked
+- Administrator can send a test message through the authenticated API
+- Telegram delivery requires `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+- Docker Compose forwards both variables to the API container
+- Focused notification API tests pass
+
+## Read-only order activity
+
+Status: implemented for open positions and completed broker deals.
+
+- Orders page combines open position snapshots with raw completed deal activity
+- Uses simulation or MT5 data from the existing positions and history APIs
+- Refreshes every 15 seconds and identifies read-only simulation/MT5 data
+- No order placement, modification or cancellation controls are exposed
+- Frontend lint and production build pass
+
 ## MT5 historical candle feed
 
 - Windows worker sends up to 501 OHLCV bars for each monitored symbol and supported timeframe, along with broker tick-size metadata
@@ -232,6 +295,15 @@ Status: administrator sign-in and API session protection implemented.
 - The API issues an expiring HttpOnly, SameSite=Lax cookie; the browser reaches the API only through the same-origin Next.js proxy
 - All versioned application APIs require a valid session; health, login/logout, and the separately token-authenticated MT5 worker endpoints are exempt
 - Sign out clears the session cookie; login does not return the JWT to JavaScript
+
+## Persistent runtime connection state
+
+Status: broker and engine state survive API restarts and browser reloads.
+
+- Simulation connection and engine state are stored in Redis without credentials
+- MT5 configuration is restored and waits for a fresh Windows worker heartbeat
+- Disconnect and engine stop/start actions update the persisted snapshot
+- Broker API tests verify simulation/engine restore behavior
 
 ## Frontend broker controls
 

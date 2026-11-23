@@ -1,3 +1,4 @@
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from pydantic import model_validator
@@ -31,6 +32,12 @@ class Settings(BaseSettings):
     live_trading_enabled: bool = False
     mt5_encryption_key: str = ""
     mt5_worker_token: str = ""
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    max_daily_loss_percent: Decimal = Decimal("3")
+    max_weekly_loss_percent: Decimal = Decimal("6")
+    max_simultaneous_positions: int = 3
+    max_aggregate_open_risk_percent: Decimal = Decimal("2")
 
     @model_validator(mode="after")
     def require_production_jwt_secret(self) -> "Settings":

@@ -74,6 +74,22 @@ def test_demo_connection_and_engine_controls():
     assert stop.json()["running"] is False
 
 
+def test_persistent_runtime_restores_simulation_and_engine():
+    from app.core.persistent_runtime import restore_runtime_state, save_runtime_state
+    from app.core.runtime import runtime_store
+
+    runtime_store.connect_demo()
+    runtime_store.start_engine()
+    save_runtime_state()
+
+    runtime_store.disconnect()
+    restore_runtime_state()
+
+    assert runtime_store.state.broker == "simulation"
+    assert runtime_store.state.mt5_connected is True
+    assert runtime_store.state.engine_running is True
+
+
 def test_mt5_market_quotes_are_read_only_and_include_spread(monkeypatch):
     from app.core.runtime import RuntimeState, runtime_store
 

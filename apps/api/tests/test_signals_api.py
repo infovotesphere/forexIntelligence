@@ -10,6 +10,15 @@ from app.main import app
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
+def test_realtime_status_reports_scanner_state():
+    response = client.get("/api/v1/signals/realtime/status")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["enabled"] is True
+    assert body["interval_seconds"] == 30
+    assert "history_count" in body
+
+
 def test_signal_list_accepts_canonical_and_trailing_slash_paths():
     canonical = client.get("/api/v1/signals")
     trailing_slash = client.get("/api/v1/signals/")

@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config, pool
 
 from app.core.database import Base, engine
 import app.models.trade_deal
+import app.models.trading_signal
 import app.models.user
 
 config = context.config

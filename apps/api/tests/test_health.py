@@ -10,8 +10,17 @@ def test_health_reports_safe_defaults():
     response = client.get("/health")
     assert response.status_code == 200
     body = response.json()
-    assert body["status"] == "ok"
+    assert body["status"] in {"ok", "degraded"}
+    assert body["database"] in {"healthy", "unhealthy"}
+    assert body["redis"] in {"healthy", "unhealthy"}
+    assert body["broker"] in {"connected", "disconnected"}
     assert body["live_trading"] is False
+
+
+def test_versioned_health_is_public():
+    response = client.get("/api/v1/health")
+    assert response.status_code == 200
+    assert response.json()["status"] in {"ok", "degraded"}
 
 
 def test_api_root_has_public_entry_points():
