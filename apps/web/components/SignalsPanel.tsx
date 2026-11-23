@@ -144,7 +144,7 @@ export function SignalsPanel() {
       ? "Mixed data sources"
       : hasMt5Signals
         ? "MT5 candle history"
-        : "In-memory · simulation";
+        : "Persisted · simulation";
 
   return (
     <div className="signals-content">
@@ -193,7 +193,7 @@ export function SignalsPanel() {
         <article className="card signal-kpi">
           <span>History</span>
           <strong>{realtime?.history_count ?? signals.length}</strong>
-          <small>Validated signals retained in this session</small>
+          <small>Validated signals retained in history</small>
         </article>
         <article className="card signal-kpi">
           <span>Expired</span>

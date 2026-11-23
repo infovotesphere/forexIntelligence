@@ -10,7 +10,7 @@ from app.main import app
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
-def test_realtime_status_reports_scanner_state():
+def test_realtime_status_reports_scanner_state(sqlite_database):
     response = client.get("/api/v1/signals/realtime/status")
     assert response.status_code == 200
     body = response.json()

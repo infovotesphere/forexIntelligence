@@ -48,7 +48,9 @@ def generate_validated_signals(
         stop = prices["stop_loss"]
         risk = entry - stop if candidate.direction == "BUY" else stop - entry
         reward = prices["take_profit_3"] - entry if candidate.direction == "BUY" else entry - prices["take_profit_3"]
+        candle_timestamp = getattr(completed[-1], "time", None)
         signal_fingerprint = "|".join((
+            str(candle_timestamp or ""),
             symbol,
             timeframe,
             candidate.strategy,

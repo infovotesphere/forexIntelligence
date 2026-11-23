@@ -1,13 +1,14 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.broker import simulation_adapter
 from app.core.market_data import get_mt5_candles
 from app.core.database import get_db
 from app.core.runtime import runtime_store
+from app.core.real_market_data import get_real_market_candles
 from app.models.trading_signal import TradingSignal
 from trading.signals.generator import generate_validated_signals
 from trading.strategies.trend_following import TrendFollowingStrategy
@@ -27,11 +28,11 @@ REALTIME_SYMBOLS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", 
 
 
 @router.get("/realtime/status")
-def realtime_status() -> dict:
+def realtime_status(db: Session = Depends(get_db)) -> dict:
     return {
         **realtime_state,
         "connected": runtime_store.broker_connected(),
-        "history_count": len(signal_store),
+        "history_count": db.scalar(select(func.count()).select_from(TradingSignal)) or 0,
     }
 
 
@@ -120,16 +121,14 @@ def generate_signals(
                 if not tick_size.is_finite() or tick_size <= 0:
                     raise HTTPException(status_code=503, detail=f"MT5 tick size is invalid for {actual_symbol}")
             else:
-                end = datetime.now(UTC)
-                minutes = TIMEFRAME_MINUTES[scan_timeframe]
-                candles = simulation_adapter.get_historical_candles(
-                    symbol.upper(), scan_timeframe, end - timedelta(minutes=minutes * 260), end
-                )
+                candles = get_real_market_candles(symbol.upper(), scan_timeframe)
                 tick_size = simulation_adapter.get_symbol_info(actual_symbol).tick_size
         except HTTPException:
             raise
-        except (KeyError, ValueError) as exc:
+        except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
         candidates = generate_validated_signals(
             actual_symbol, scan_timeframe, candles,

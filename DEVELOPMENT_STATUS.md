@@ -230,6 +230,7 @@ Status: server-side realtime scanning and browser history controls implemented.
 - API scans configured symbols every 30 seconds while a broker account is connected
 - Stable signal fingerprints deduplicate repeated generated setups
 - Active and history views separate live validated setups from expired retained signals
+- Signal history is persisted in PostgreSQL and deduplicated by stable candle-aware fingerprints
 - Signals history refreshes every 15 seconds and remains read-only
 - Simulation and MT5 source safeguards remain unchanged; no orders are submitted
 - Signal engine/API tests pass

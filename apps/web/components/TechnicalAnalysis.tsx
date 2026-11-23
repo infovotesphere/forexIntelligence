@@ -94,7 +94,7 @@ export function TechnicalAnalysis() {
             ? "When MT5 is selected, analysis requires candle history from the Windows worker; otherwise generated simulation candles are used."
             : analysis.data_source === "mt5"
               ? "Analysis is based on candle history reported by the Windows MT5 worker. Signals are informational; no orders are placed."
-              : "This analysis uses generated development candles, not broker-market analysis."}
+              : "This analysis uses real external market OHLC; the account and execution remain simulated."}
         </span>
       </div>
       <section className="card panel analysis-controls">

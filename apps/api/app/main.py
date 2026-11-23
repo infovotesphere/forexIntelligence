@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.runtime import runtime_store
 from app.api.v1 import signals as signals_api
 from app.core.persistent_runtime import restore_runtime_state
+from app.core.database import SessionLocal
 
 
 async def realtime_signal_scanner() -> None:
@@ -25,8 +26,14 @@ async def realtime_signal_scanner() -> None:
         if not runtime_store.broker_connected():
             continue
         try:
-            for symbol in signals_api.REALTIME_SYMBOLS:
-                await asyncio.to_thread(signals_api.generate_signals, symbol, "ALL")
+            with SessionLocal() as db:
+                for symbol in signals_api.REALTIME_SYMBOLS:
+                    await asyncio.to_thread(
+                        signals_api.generate_signals,
+                        symbol,
+                        "ALL",
+                        db,
+                    )
             signals_api.realtime_state["last_scan_at"] = datetime.now(UTC).isoformat()
             signals_api.realtime_state["last_scan_error"] = None
         except Exception as exc:

@@ -144,7 +144,7 @@ export function BacktestRunner() {
     <div className="backtest-content">
       <div className="signal-warning" role="note">
         <strong>Historical candle replay · paper only</strong>
-        <span>Connected MT5 accounts use read-only broker candles and will not fall back to generated data if the feed is missing or stale. Generated candles are available only with the simulation account explicitly connected. No broker orders are sent.</span>
+        <span>Simulation mode uses real external market OHLC for replay and analysis; the account and execution remain simulated. MT5 accounts use read-only broker candles and will not substitute external or simulated data if the feed is missing or stale. No broker orders are sent.</span>
       </div>
       <section className="card panel backtest-controls">
         <div><h2>Configure replay</h2><p>Choose the market, timeframe, strategy, and history length.</p></div>
@@ -162,7 +162,7 @@ export function BacktestRunner() {
         <>
           <div className="backtest-result-heading">
             <div><h2>{result.symbol} · {result.timeframe}</h2><p>{strategies.find((item) => item.value === result.strategy)?.label ?? result.strategy} · {result.bars_tested} completed candles</p></div>
-            <span className={`pill ${result.simulated ? "simulation-pill" : "broker-pill"}`}>{result.simulated ? "SIMULATED CANDLES" : "MT5 · BROKER CANDLES"}</span>
+            <span className={`pill ${result.simulated ? "simulation-pill" : "broker-pill"}`}>{result.simulated ? "REAL MARKET OHLC · SIM ACCOUNT" : "MT5 · BROKER CANDLES"}</span>
           </div>
           <section className="card replay-controls">
             <div className="replay-transport">

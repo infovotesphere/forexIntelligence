@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from app.core.broker import simulation_adapter
 from app.core.market_data import get_mt5_candles
+from app.core.real_market_data import get_real_market_candles
 from app.core.runtime import runtime_store
 from trading.backtesting.engine import backtest_strategy
 from trading.strategies.base import Strategy
@@ -78,15 +79,14 @@ def run_backtest(payload: BacktestRequest) -> dict:
         backtest_symbol = actual_symbol
         simulated = False
     elif state.broker == "simulation":
-        start = end - timedelta(minutes=timeframe_minutes * payload.bars)
         try:
-            candles = simulation_adapter.get_historical_candles(
-                payload.symbol.upper(), payload.timeframe, start, end
-            )
+            candles = get_real_market_candles(payload.symbol.upper(), payload.timeframe)
             instrument = simulation_adapter.get_symbol_info(payload.symbol.upper())
-        except (KeyError, ValueError) as exc:
+        except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        completed = candles[:-1]
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        completed = candles[-(payload.bars + 1):-1]
         backtest_symbol = payload.symbol.upper()
         tick_size = instrument.tick_size
         simulated = True
@@ -126,7 +126,7 @@ def run_backtest(payload: BacktestRequest) -> dict:
             for candle in completed
         ],
         "execution_model": (
-            f"Price source: {'generated simulation' if simulated else 'read-only MT5 broker history'}. "
+            f"Price source: {'real external market history' if simulated else 'read-only MT5 broker history'}. "
             "This is a paper replay; no broker orders are sent. Entry at signal candle close; exit at TP3 or stop loss. "
             "Stop loss is assumed first if both levels are touched in one candle. "
             "Spread, slippage, commissions and partial targets are not modeled."

@@ -3,6 +3,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from app.core.broker import simulation_adapter
 from app.core.market_data import get_mt5_candles
+from app.core.real_market_data import get_real_market_candles
 from app.core.runtime import runtime_store
 from trading.analysis.indicators import calculate_indicators
 from trading.analysis.market_regime import classify_regime
@@ -49,17 +50,17 @@ def analyse_symbol(
         actual_symbol = symbol.upper()
         start = end - timedelta(minutes=multipliers[timeframe] * 260)
         try:
-            candles = simulation_adapter.get_historical_candles(actual_symbol, timeframe, start, end)
-        except (KeyError, ValueError) as exc:
+            candles = get_real_market_candles(actual_symbol, timeframe)
+        except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         for other_timeframe, multiplier in multipliers.items():
             if other_timeframe == timeframe:
                 continue
             other_start = end - timedelta(minutes=multiplier * 260)
             try:
-                other_candles = simulation_adapter.get_historical_candles(
-                    actual_symbol, other_timeframe, other_start, end
-                )
+                other_candles = get_real_market_candles(actual_symbol, other_timeframe)
             except (KeyError, ValueError) as exc:
                 raise HTTPException(status_code=404, detail=str(exc)) from exc
             candles_by_timeframe[other_timeframe] = other_candles[:-1]
