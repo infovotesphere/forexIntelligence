@@ -182,6 +182,7 @@ class MT5Adapter(BrokerConnector):
             {
                 "ticket": str(position.ticket),
                 "symbol": position.symbol,
+                "direction": "BUY" if int(position.type) == int(self._mt5.POSITION_TYPE_BUY) else "SELL",
                 "volume": str(position.volume),
                 "price_open": str(position.price_open),
                 "price_current": str(position.price_current),

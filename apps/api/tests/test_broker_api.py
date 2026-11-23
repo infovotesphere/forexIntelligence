@@ -35,6 +35,17 @@ def test_account_and_market_endpoints():
     assert eurusd["simulated"] is True
 
 
+def test_simulation_positions_endpoint_is_read_only_and_empty():
+    client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
+    response = client.get("/api/v1/positions")
+
+    assert response.status_code == 200
+    assert response.json()["connected"] is True
+    assert response.json()["items"] == []
+    assert response.json()["simulated"] is True
+    assert response.json()["trading_mode"] == "paper_only"
+
+
 def test_demo_connection_and_engine_controls():
     connect = client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
     assert connect.status_code == 200
@@ -84,6 +95,8 @@ def test_mt5_market_quotes_are_read_only_and_include_spread(monkeypatch):
     assert quote["spread"] == "0.00012"
     assert quote["simulated"] is False
     assert quote["execution_mode"] == "paper_only"
+    status = client.get("/api/v1/accounts/status")
+    assert status.json()["simulated"] is False
 
 
 def test_mt5_connect_requires_encryption_key_and_never_echoes_password(monkeypatch):

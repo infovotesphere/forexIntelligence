@@ -11,6 +11,7 @@ signal_store: list[dict] = []
 
 
 @router.get("/")
+@router.get("")
 def list_signals(status: str | None = None) -> dict:
     now = datetime.now(UTC)
     items = []

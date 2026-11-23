@@ -143,6 +143,57 @@ button, input, select { font: inherit; }
 .buy-direction, .signal-status.validated { color: #75d6bd; background: #10251f; }
 .sell-direction, .signal-status.rejected, .signal-status.expired { color: #ef9b9b; background: #2a171b; }
 .signal-reason { max-width: 260px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+.dashboard-error { margin: 0 0 12px; }
+.dashboard-metrics { margin-bottom: 12px; }
+.dashboard-small-value { font-size: 16px; }
+.dashboard-panel { min-width: 0; min-height: 250px; }
+.dashboard-panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.dashboard-panel-heading h2 { margin: 0; }
+.dashboard-panel-heading a { color: #75d6bd; font-size: 11px; }
+.dashboard-table-wrap { overflow-x: auto; }
+.dashboard-table-wrap .table { min-width: 420px; }
+.dashboard-empty { min-height: 150px; display: grid; place-items: center; text-align: center; color: var(--muted); font-size: 12px; }
+.dashboard-signal-count { margin-top: 12px; color: var(--muted); font-size: 11px; }
+.positions-panel { overflow: hidden; }
+.positions-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px; border-bottom: 1px solid var(--border); }
+.positions-toolbar strong { font-size: 14px; }
+.positions-toolbar p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.positions-error { margin: 12px 18px; }
+.positions-empty { min-height: 180px; border: 0; border-radius: 0; }
+.positions-table-wrap { width: 100%; overflow-x: auto; }
+.positions-table { min-width: 900px; }
+.positions-table td { white-space: nowrap; }
+.position-profit { color: var(--positive); }
+.position-loss { color: var(--negative); }
+.positions-safety { margin: 14px 18px 18px; }
+.analysis-content { display: grid; gap: 12px; }
+.analysis-controls { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; min-height: 0; }
+.analysis-controls h2, .analysis-panel h2 { margin: 0 0 5px; font-size: 14px; }
+.analysis-controls p { margin: 0; color: var(--muted); font-size: 12px; }
+.analysis-empty { min-height: 150px; }
+.analysis-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.analysis-label { text-transform: capitalize; font-size: 16px; }
+.analysis-label.bullish { color: var(--positive); }
+.analysis-label.bearish { color: var(--negative); }
+.analysis-panel { min-height: 0; }
+.analysis-indicators { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 20px; margin: 0; }
+.analysis-indicators div { display: flex; justify-content: space-between; gap: 8px; padding: 10px 0; border-bottom: 1px solid rgba(29,42,56,.65); font-size: 12px; }
+.analysis-indicators dt { color: var(--muted); }
+.analysis-indicators dd { margin: 0; font-variant-numeric: tabular-nums; }
+.analysis-panel h3 { margin: 20px 0 8px; color: var(--muted); font-size: 11px; font-weight: 500; text-transform: uppercase; }
+.analysis-levels { display: flex; flex-wrap: wrap; gap: 6px; }
+.analysis-muted { color: var(--muted); font-size: 12px; }
+.analysis-candidate-list { display: grid; }
+.analysis-candidate { padding: 16px 18px; border-bottom: 1px solid var(--border); }
+.analysis-candidate:last-child { border-bottom: 0; }
+.analysis-candidate-heading, .analysis-candidate-heading > div { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.analysis-candidate-heading > div { justify-content: flex-start; }
+.analysis-candidate-heading strong { text-transform: capitalize; font-size: 13px; }
+.analysis-candidate > p { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.analysis-level-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.analysis-level-grid span { display: grid; gap: 5px; color: var(--muted); font-size: 10px; }
+.analysis-level-grid strong { color: var(--foreground); font-size: 11px; font-variant-numeric: tabular-nums; }
+.analysis-disclaimer { margin: 0; }
 @media (max-width: 640px) {
   .mt5-form-heading { display: block; }
   .mt5-form-heading .pill { margin-bottom: 10px; }
@@ -162,6 +213,10 @@ button, input, select { font: inherit; }
   .signal-controls { display: grid; }
   .signal-form { align-items: stretch; }
   .signal-form label { flex: 1; }
+  .analysis-controls { display: grid; }
+  .analysis-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analysis-indicators { grid-template-columns: 1fr; }
+  .analysis-level-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 640px) {
   .shell { display: block; }

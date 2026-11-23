@@ -66,6 +66,7 @@ def main() -> None:
 
             account = adapter.get_account_info()
             market_data = adapter.get_monitored_quotes(MONITORED_SYMBOLS)
+            open_positions = adapter.get_open_positions()
             status_response = session.post(
                 f"{api_url}/api/v1/worker/mt5/status",
                 json={
@@ -76,6 +77,7 @@ def main() -> None:
                     "balance": str(account.balance),
                     "equity": str(account.equity),
                     "market_data": market_data,
+                    "open_positions": open_positions,
                     "environment": credentials["environment"],
                     "message": f"MT5 {credentials['environment']} connected; trading remains paper-only",
                 },

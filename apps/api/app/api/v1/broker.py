@@ -1,14 +1,14 @@
 import hmac
 import json
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
 from pydantic import BaseModel, Field, SecretStr
-from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
-from app.core.runtime import runtime_store
-from app.core.config import get_settings
-
 from app.core.broker import simulation_adapter
+from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
+from app.core.config import get_settings
+from app.core.runtime import runtime_store
 
 router = APIRouter(tags=["broker"])
 
@@ -58,7 +58,7 @@ def connect_account(payload: DemoConnectRequest) -> dict:
         "account_id": state.account_id,
         "engine_running": state.engine_running,
         "live_trading_enabled": False,
-        "simulated": True,
+        "simulated": state.broker == "simulation",
         "trading_mode": "paper_only",
         "message": state.message,
     }
@@ -68,7 +68,7 @@ def connect_account(payload: DemoConnectRequest) -> dict:
 def disconnect_account() -> dict:
     state = runtime_store.disconnect()
     return {"connected": False, "environment": "demo", "broker": state.broker, "account_id": "",
-            "engine_running": False, "live_trading_enabled": False, "simulated": True,
+            "engine_running": False, "live_trading_enabled": False, "simulated": False,
             "message": state.message}
 
 
@@ -83,6 +83,19 @@ def require_worker(authorization: str | None = Header(default=None)) -> None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid worker token")
 
 
+class WorkerOpenPosition(BaseModel):
+    ticket: str = Field(min_length=1, max_length=64)
+    symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
+    direction: Literal["BUY", "SELL"]
+    volume: Decimal = Field(gt=0)
+    price_open: Decimal = Field(ge=0)
+    price_current: Decimal = Field(ge=0)
+    profit: Decimal
+    stop_loss: Decimal = Field(ge=0)
+    take_profit: Decimal = Field(ge=0)
+    simulated: bool = False
+
+
 class WorkerStatusUpdate(BaseModel):
     connected: bool
     account_id: str = Field(min_length=1, max_length=64)
@@ -93,6 +106,7 @@ class WorkerStatusUpdate(BaseModel):
     equity: Decimal | None = None
     message: str = Field(max_length=500)
     market_data: list[dict] = Field(default_factory=list, max_length=32)
+    open_positions: list[WorkerOpenPosition] = Field(default_factory=list, max_length=500)
 
 
 @router.post("/worker/mt5/claim", response_model=None)
@@ -125,6 +139,7 @@ def update_mt5_status(
             equity=payload.equity,
             message=payload.message,
             market_data=payload.market_data,
+            open_positions=[position.model_dump(mode="json") for position in payload.open_positions],
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -211,7 +226,7 @@ def account_status() -> dict:
         "account_id": state.account_id,
         "engine_running": state.engine_running,
         "live_trading_enabled": False,
-        "simulated": True,
+        "simulated": state.broker == "simulation",
         "message": (
             "Windows MT5 worker heartbeat timed out"
             if state.broker == "mt5" and state.mt5_connected and not connected
@@ -271,3 +286,32 @@ def markets() -> list[dict]:
             "simulated": True,
         })
     return instruments
+
+
+@router.get("/positions")
+def positions() -> dict:
+    state = runtime_store.state
+    connected = runtime_store.broker_connected()
+    if not connected:
+        return {
+            "items": [],
+            "total": 0,
+            "connected": False,
+            "environment": state.environment,
+            "simulated": state.broker == "simulation",
+            "trading_mode": "paper_only",
+        }
+    if state.broker == "mt5":
+        items = [dict(position) for position in state.open_positions]
+        simulated = False
+    else:
+        items = simulation_adapter.get_open_positions()
+        simulated = True
+    return {
+        "items": items,
+        "total": len(items),
+        "connected": True,
+        "environment": state.environment,
+        "simulated": simulated,
+        "trading_mode": "paper_only",
+    }

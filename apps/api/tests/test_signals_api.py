@@ -6,6 +6,15 @@ from app.main import app
 client = TestClient(app)
 
 
+def test_signal_list_accepts_canonical_and_trailing_slash_paths():
+    canonical = client.get("/api/v1/signals")
+    trailing_slash = client.get("/api/v1/signals/")
+
+    assert canonical.status_code == 200
+    assert trailing_slash.status_code == 200
+    assert canonical.json().keys() == trailing_slash.json().keys()
+
+
 def test_generate_signals_endpoint():
     response = client.post("/api/v1/signals/generate", params={"symbol": "EURUSD", "timeframe": "H1"})
     assert response.status_code == 200

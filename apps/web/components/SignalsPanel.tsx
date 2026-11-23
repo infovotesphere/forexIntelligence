@@ -37,7 +37,7 @@ export function SignalsPanel() {
     let active = true;
     async function loadSignals() {
       try {
-        const response = await fetch("/api/v1/signals/", { cache: "no-store" });
+        const response = await fetch("/api/v1/signals", { cache: "no-store" });
         if (!response.ok) throw new Error("Unable to load trading signals");
         const result = await response.json() as { items: Signal[] };
         if (active) {
@@ -68,7 +68,7 @@ export function SignalsPanel() {
       const response = await fetch(`/api/v1/signals/generate?${params}`, { method: "POST" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail ?? "Signal generation failed");
-      const listResponse = await fetch("/api/v1/signals/", { cache: "no-store" });
+      const listResponse = await fetch("/api/v1/signals", { cache: "no-store" });
       if (!listResponse.ok) throw new Error("Signals generated, but could not refresh the signal list");
       const list = await listResponse.json() as { items: Signal[] };
       setSignals(list.items);

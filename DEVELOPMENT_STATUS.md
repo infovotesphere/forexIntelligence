@@ -132,6 +132,36 @@ Status: implemented and validated for simulation data.
 - API reports validated signals as expired after their four-hour validity window
 - Verification: 33 backend tests pass; frontend production build and focused lint pass
 
+## Phase 8 — Live dashboard overview
+
+Status: implemented and validated.
+
+- Dashboard shows connection type, account balance/equity, engine state, market quotes and recent signals
+- Refreshes account, market and signal data every ten seconds
+- Live MT5 is labeled read-only; simulation and live broker-data flags are no longer conflated in connection status
+- Verification: frontend production build and focused lint pass; API suite updated for MT5 status labeling
+
+## Phase 9 — Read-only position monitoring
+
+Status: implemented and validated.
+
+- Windows MT5 worker includes open broker positions in its authenticated heartbeat
+- API validates and serves position snapshots, including side, volume, prices, floating P/L and protective levels
+- Positions page refreshes periodically and labels broker data as read-only
+- Simulation account correctly returns an empty position list; disconnected accounts do not display stale positions
+- No position modification or close actions are exposed
+- Verification: 34 backend tests pass; frontend production build and focused lint pass
+
+## Phase 10 — Technical market analytics
+
+Status: implemented and validated with simulation candles.
+
+- Analytics page displays trend, market structure, regime, indicators, support/resistance and strategy candidates
+- Instrument and timeframe can be selected on the page
+- UI explicitly identifies generated simulation candles and does not present them as MT5 data
+- Performance analytics remain unavailable until trade history is persisted and reconciled
+- Verification: analysis API tests pass; frontend production build and focused lint pass
+
 ## Frontend broker controls
 
 Status: implemented and verified.

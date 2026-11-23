@@ -42,7 +42,7 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
         )
         assert connect.status_code == 200
         assert connect.json()["connected"] is False
-        assert connect.json()["simulated"] is True
+        assert connect.json()["simulated"] is False
         assert "do-not-return-this" not in connect.text
 
         rejected = client.post("/api/v1/worker/mt5/claim")
@@ -77,6 +77,18 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
                     "ask": "1.10010",
                     "time": "2026-11-23T14:00:00+00:00",
                 }],
+                "open_positions": [{
+                    "ticket": "98765",
+                    "symbol": "EURUSDm",
+                    "direction": "BUY",
+                    "volume": "0.10",
+                    "price_open": "1.09900",
+                    "price_current": "1.10000",
+                    "profit": "10.00",
+                    "stop_loss": "1.09500",
+                    "take_profit": "1.11000",
+                    "simulated": False,
+                }],
                 "message": "MT5 demo connected; trading remains paper-only",
             },
         )
@@ -90,6 +102,11 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
         market = client.get("/api/v1/markets").json()
         assert market[0]["symbol"] == "EURUSDm"
         assert market[0]["execution_mode"] == "paper_only"
+        positions = client.get("/api/v1/positions").json()
+        assert positions["total"] == 1
+        assert positions["items"][0]["ticket"] == "98765"
+        assert positions["items"][0]["profit"] == "10.00"
+        assert positions["simulated"] is False
     finally:
         runtime_store.state = previous_state
 
