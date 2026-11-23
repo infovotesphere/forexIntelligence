@@ -139,8 +139,8 @@ class MT5Adapter(BrokerConnector):
                     len(name),
                 ),
             )
-            tick = self.get_tick(actual_symbol)
             info = self.get_symbol_info(actual_symbol)
+            tick = self.get_tick(actual_symbol)
             quotes.append({
                 "base_symbol": base_symbol,
                 "symbol": actual_symbol,

@@ -39,9 +39,7 @@ export function RiskCalculator() {
         setConnected(status.connected);
         setEquity(status.account?.equity ?? null);
         setMarkets(marketData);
-        if (marketData.length && !marketData.some((market) => market.symbol === symbol)) {
-          setSymbol(marketData[0].symbol);
-        }
+        if (marketData.length) setSymbol(marketData[0].symbol);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Unable to load risk calculator");
       } finally {
@@ -121,7 +119,7 @@ export function RiskCalculator() {
               <div><dt>Risk within limit</dt><dd>{calculation.risk_within_budget ? "Yes" : "No"}</dd></div>
             </dl>
             {calculation.reason && <p className="risk-warning">{calculation.reason}</p>}
-            <p className="safety-note">Sizing estimate only. No order has been placed. Values use the connected account's supported symbol specifications.</p>
+            <p className="safety-note">Sizing estimate only. No order has been placed. Values use the connected account&apos;s supported symbol specifications.</p>
           </>
         )}
       </section>

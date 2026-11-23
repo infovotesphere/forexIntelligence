@@ -110,7 +110,27 @@ Status: implemented and validated for the simulation broker.
 - Rounds volume down to the broker step and returns zero rather than exceeding risk to meet minimum volume
 - Explicitly rejects disconnected accounts and does not claim MT5 sizing support until the Windows worker supplies symbol specifications
 - Calculator is estimates-only and never submits orders
-- Verification: 31 backend tests pass; frontend production build and Docker Compose validation pass
+- Verification: 33 backend tests pass; frontend production build and Docker Compose validation pass
+
+## Phase 6 — Market scanner
+
+Status: implemented and validated for simulation quotes and the MT5 worker feed.
+
+- Market scanner displays bid, ask, spread, symbol and quote timestamp
+- Simulation and MT5 read-only data are explicitly labeled
+- Quotes refresh every five seconds through the same-origin API proxy
+- Worker resolves broker-specific symbol names and includes precision metadata
+- Verification: 33 backend tests pass; updated frontend production build and focused lint pass
+
+## Phase 7 — Signal generation interface
+
+Status: implemented and validated for simulation data.
+
+- Signals page can generate strategy candidates by instrument and timeframe
+- Displays entry, stop, three targets, reward/risk, quality and validation details
+- Signal list refreshes periodically and labels its in-memory, simulation-only status
+- API reports validated signals as expired after their four-hour validity window
+- Verification: 33 backend tests pass; frontend production build and focused lint pass
 
 ## Frontend broker controls
 
@@ -142,7 +162,7 @@ Status: connection flow and Windows worker implemented; real broker login awaits
 - Live account connections cannot start the engine; live trading remains hard-disabled
 - Missing backend encryption key or worker token produces an explicit API configuration error
 - Real connection requires `MT5_ENCRYPTION_KEY`, `MT5_WORKER_TOKEN`, a reachable HTTPS API and an installed/running Windows MT5 terminal/worker
-- Verification: 31 tests passed; frontend production build passed; Compose configuration and worker/API syntax checks passed
+- Verification: 33 tests passed; frontend production build passed; Compose configuration and worker/API syntax checks passed
 - Codespace currently reports no broker connected; actual MT5 authentication was not run because this environment is Linux and has no MT5 terminal/worker
 
 ### Verification

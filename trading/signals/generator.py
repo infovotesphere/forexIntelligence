@@ -34,7 +34,7 @@ def generate_validated_signals(symbol: str, timeframe: str, candles, strategies,
         entry = Decimal(str(candidate.entry))
         stop = Decimal(str(candidate.stop_loss))
         risk = entry - stop if candidate.direction == "BUY" else stop - entry
-        reward = Decimal(str(candidate.take_profit_1)) - entry if candidate.direction == "BUY" else entry - Decimal(str(candidate.take_profit_1))
+        reward = Decimal(str(candidate.take_profit_3)) - entry if candidate.direction == "BUY" else entry - Decimal(str(candidate.take_profit_3))
         results.append({
             "signal_id": str(uuid4()),
             "symbol": symbol,

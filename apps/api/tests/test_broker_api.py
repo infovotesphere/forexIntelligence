@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
@@ -48,6 +49,41 @@ def test_demo_connection_and_engine_controls():
     stop = client.post("/api/v1/engine/stop")
     assert stop.status_code == 200
     assert stop.json()["running"] is False
+
+
+def test_mt5_market_quotes_are_read_only_and_include_spread(monkeypatch):
+    from app.core.runtime import RuntimeState, runtime_store
+
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(
+            broker="mt5",
+            environment="demo",
+            account_id="123456",
+            mt5_connected=True,
+            market_data=(
+                {
+                    "base_symbol": "EURUSD",
+                    "symbol": "EURUSDm",
+                    "bid": "1.10000",
+                    "ask": "1.10012",
+                    "digits": 5,
+                    "time": datetime.now(UTC).isoformat(),
+                },
+            ),
+            worker_last_seen=datetime.now(UTC),
+        ),
+    )
+
+    response = client.get("/api/v1/markets")
+
+    assert response.status_code == 200
+    quote = response.json()[0]
+    assert quote["symbol"] == "EURUSDm"
+    assert quote["spread"] == "0.00012"
+    assert quote["simulated"] is False
+    assert quote["execution_mode"] == "paper_only"
 
 
 def test_mt5_connect_requires_encryption_key_and_never_echoes_password(monkeypatch):

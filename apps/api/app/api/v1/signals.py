@@ -12,9 +12,16 @@ signal_store: list[dict] = []
 
 @router.get("/")
 def list_signals(status: str | None = None) -> dict:
-    items = signal_store
-    if status:
-        items = [signal for signal in items if signal["status"] == status.upper()]
+    now = datetime.now(UTC)
+    items = []
+    for signal in signal_store:
+        item = dict(signal)
+        if item["status"] == "VALIDATED" and item.get("expires_at"):
+            expires_at = datetime.fromisoformat(item["expires_at"])
+            if expires_at <= now:
+                item["status"] = "EXPIRED"
+        if status is None or item["status"] == status.upper():
+            items.append(item)
     return {"items": items, "total": len(items), "page": 1, "page_size": 100}
 
 

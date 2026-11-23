@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from dataclasses import replace
+from decimal import Decimal
 
 from trading.connectors.simulation import SimulationAdapter
 from trading.signals.generator import generate_validated_signals
@@ -39,3 +40,4 @@ def test_signal_generation_never_submits_or_returns_unexpired_signals():
         assert signal["status"] in {"VALIDATED", "REJECTED"}
         if signal["status"] == "VALIDATED":
             assert "expires_at" in signal
+            assert Decimal(signal["risk_reward_ratio"]) >= Decimal("2")
