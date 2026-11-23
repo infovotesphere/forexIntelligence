@@ -89,6 +89,19 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
                     "take_profit": "1.11000",
                     "simulated": False,
                 }],
+                "history_deals": [{
+                    "ticket": "88776",
+                    "order": "98765",
+                    "symbol": "EURUSDm",
+                    "direction": "BUY",
+                    "volume": "0.10",
+                    "price": "1.09900",
+                    "profit": "10.00",
+                    "commission": "-0.50",
+                    "swap": "0",
+                    "time": "2026-11-23T14:00:00+00:00",
+                    "simulated": False,
+                }],
                 "message": "MT5 demo connected; trading remains paper-only",
             },
         )
@@ -107,6 +120,12 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
         assert positions["items"][0]["ticket"] == "98765"
         assert positions["items"][0]["profit"] == "10.00"
         assert positions["simulated"] is False
+        history = client.get("/api/v1/history").json()
+        assert history["total"] == 1
+        assert history["items"][0]["ticket"] == "88776"
+        assert history["items"][0]["commission"] == "-0.50"
+        assert history["items"][0]["net_profit"] == "9.50"
+        assert history["simulated"] is False
     finally:
         runtime_store.state = previous_state
 

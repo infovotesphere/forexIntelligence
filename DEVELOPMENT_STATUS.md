@@ -162,6 +162,17 @@ Status: implemented and validated with simulation candles.
 - Performance analytics remain unavailable until trade history is persisted and reconciled
 - Verification: analysis API tests pass; frontend production build and focused lint pass
 
+## Phase 11 — MT5 deal history
+
+Status: read-only worker handoff and dashboard view implemented.
+
+- Windows MT5 worker reports up to 500 deals from the last 30 days
+- API validates deal snapshots and computes net profit using Decimal profit, commission and swap fields
+- History page shows deal/order IDs, side, volume, price and P/L breakdown
+- Raw MT5 deals are explicitly distinguished from strategy-attributed or reconciled application trades
+- Simulation history remains empty until simulated executions are persisted
+- Verification: 36 backend tests pass; frontend production build and focused lint pass
+
 ## Frontend broker controls
 
 Status: implemented and verified.

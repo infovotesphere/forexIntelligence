@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 from urllib.parse import urlparse
 
 import requests
@@ -67,6 +68,10 @@ def main() -> None:
             account = adapter.get_account_info()
             market_data = adapter.get_monitored_quotes(MONITORED_SYMBOLS)
             open_positions = adapter.get_open_positions()
+            history_deals = adapter.get_deal_history(
+                datetime.now(UTC) - timedelta(days=30),
+                datetime.now(UTC),
+            )[-500:]
             status_response = session.post(
                 f"{api_url}/api/v1/worker/mt5/status",
                 json={
@@ -78,6 +83,7 @@ def main() -> None:
                     "equity": str(account.equity),
                     "market_data": market_data,
                     "open_positions": open_positions,
+                    "history_deals": history_deals,
                     "environment": credentials["environment"],
                     "message": f"MT5 {credentials['environment']} connected; trading remains paper-only",
                 },

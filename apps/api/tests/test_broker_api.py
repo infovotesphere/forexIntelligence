@@ -46,6 +46,16 @@ def test_simulation_positions_endpoint_is_read_only_and_empty():
     assert response.json()["trading_mode"] == "paper_only"
 
 
+def test_simulation_history_endpoint_is_empty_and_marked_simulated():
+    client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
+    response = client.get("/api/v1/history")
+
+    assert response.status_code == 200
+    assert response.json()["items"] == []
+    assert response.json()["connected"] is True
+    assert response.json()["simulated"] is True
+
+
 def test_demo_connection_and_engine_controls():
     connect = client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
     assert connect.status_code == 200

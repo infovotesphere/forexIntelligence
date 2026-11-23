@@ -216,10 +216,29 @@ class MT5Adapter(BrokerConnector):
         deals = self._mt5.history_deals_get(start, end)
         if deals is None:
             raise RuntimeError(f"MT5 deal history unavailable: {self._mt5.last_error()}")
-        return [
-            {"ticket": str(deal.ticket), "order": str(deal.order), "symbol": deal.symbol, "profit": str(deal.profit)}
-            for deal in deals
-        ]
+        result = []
+        for deal in deals:
+            deal_type = int(deal.type)
+            if deal_type == int(self._mt5.DEAL_TYPE_BUY):
+                direction = "BUY"
+            elif deal_type == int(self._mt5.DEAL_TYPE_SELL):
+                direction = "SELL"
+            else:
+                direction = "OTHER"
+            result.append({
+                "ticket": str(deal.ticket),
+                "order": str(deal.order),
+                "symbol": deal.symbol or "",
+                "direction": direction,
+                "volume": str(deal.volume),
+                "price": str(deal.price),
+                "profit": str(deal.profit),
+                "commission": str(deal.commission),
+                "swap": str(deal.swap),
+                "time": datetime.fromtimestamp(int(deal.time), tz=UTC).isoformat(),
+                "simulated": False,
+            })
+        return result
 
     def submit_order(self, symbol: str, direction: str, volume, stop_loss=None, take_profit=None, idempotency_key=None):
         raise PermissionError("Paper-trading mode is active; MT5 broker orders are disabled")

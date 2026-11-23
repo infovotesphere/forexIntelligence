@@ -1,6 +1,7 @@
 import hmac
 import json
 from decimal import Decimal
+from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
@@ -96,6 +97,20 @@ class WorkerOpenPosition(BaseModel):
     simulated: bool = False
 
 
+class WorkerDealSnapshot(BaseModel):
+    ticket: str = Field(min_length=1, max_length=64)
+    order: str = Field(max_length=64)
+    symbol: str = Field(max_length=32)
+    direction: Literal["BUY", "SELL", "OTHER"]
+    volume: Decimal = Field(ge=0)
+    price: Decimal = Field(ge=0)
+    profit: Decimal
+    commission: Decimal
+    swap: Decimal
+    time: datetime
+    simulated: bool = False
+
+
 class WorkerStatusUpdate(BaseModel):
     connected: bool
     account_id: str = Field(min_length=1, max_length=64)
@@ -107,6 +122,7 @@ class WorkerStatusUpdate(BaseModel):
     message: str = Field(max_length=500)
     market_data: list[dict] = Field(default_factory=list, max_length=32)
     open_positions: list[WorkerOpenPosition] = Field(default_factory=list, max_length=500)
+    history_deals: list[WorkerDealSnapshot] = Field(default_factory=list, max_length=500)
 
 
 @router.post("/worker/mt5/claim", response_model=None)
@@ -140,6 +156,7 @@ def update_mt5_status(
             message=payload.message,
             market_data=payload.market_data,
             open_positions=[position.model_dump(mode="json") for position in payload.open_positions],
+            history_deals=[deal.model_dump(mode="json") for deal in payload.history_deals],
         )
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
@@ -313,5 +330,31 @@ def positions() -> dict:
         "connected": True,
         "environment": state.environment,
         "simulated": simulated,
+        "trading_mode": "paper_only",
+    }
+
+
+@router.get("/history")
+def account_history() -> dict:
+    state = runtime_store.state
+    connected = runtime_store.broker_connected()
+    items = []
+    if connected and state.broker == "mt5":
+        for deal in state.history_deals[-500:]:
+            item = dict(deal)
+            item["net_profit"] = str(
+                Decimal(str(item["profit"]))
+                + Decimal(str(item["commission"]))
+                + Decimal(str(item["swap"]))
+            )
+            items.append(item)
+    return {
+        "items": items,
+        "total": len(items),
+        "connected": connected,
+        "environment": state.environment,
+        "currency": state.account_currency,
+        "simulated": state.broker == "simulation",
+        "period_days": 30,
         "trading_mode": "paper_only",
     }

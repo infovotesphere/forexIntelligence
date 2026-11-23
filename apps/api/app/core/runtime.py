@@ -19,6 +19,7 @@ class RuntimeState:
     equity: Decimal | None = None
     market_data: tuple[dict, ...] = ()
     open_positions: tuple[dict, ...] = ()
+    history_deals: tuple[dict, ...] = ()
     worker_last_seen: datetime | None = None
 
 
@@ -40,6 +41,7 @@ class RuntimeStateStore:
             equity=Decimal("10000"),
             market_data=(),
             open_positions=(),
+            history_deals=(),
             worker_last_seen=None,
             message="Simulation demo account connected",
         )
@@ -60,6 +62,7 @@ class RuntimeStateStore:
             equity=None,
             market_data=(),
             open_positions=(),
+            history_deals=(),
             worker_last_seen=None,
             message="Broker disconnected",
         )
@@ -86,6 +89,7 @@ class RuntimeStateStore:
             equity=None,
             market_data=(),
             open_positions=(),
+            history_deals=(),
             worker_last_seen=None,
             message=f"MT5 {environment} credentials queued for {server}; waiting for the Windows worker",
         )
@@ -112,6 +116,7 @@ class RuntimeStateStore:
         equity: Decimal | None = None,
         market_data: list[dict] | None = None,
         open_positions: list[dict] | None = None,
+        history_deals: list[dict] | None = None,
     ) -> RuntimeState:
         if (
             self.state.broker != "mt5"
@@ -128,6 +133,7 @@ class RuntimeStateStore:
             equity=equity,
             market_data=tuple(market_data or ()),
             open_positions=tuple(open_positions or ()),
+            history_deals=tuple(history_deals or ()),
             worker_last_seen=datetime.now(UTC),
             engine_running=self.state.engine_running if connected else False,
             message=message,
