@@ -18,6 +18,7 @@ class RuntimeState:
     balance: Decimal | None = None
     equity: Decimal | None = None
     market_data: tuple[dict, ...] = ()
+    market_candles: tuple[dict, ...] = ()
     open_positions: tuple[dict, ...] = ()
     history_deals: tuple[dict, ...] = ()
     worker_last_seen: datetime | None = None
@@ -40,6 +41,7 @@ class RuntimeStateStore:
             balance=Decimal("10000"),
             equity=Decimal("10000"),
             market_data=(),
+            market_candles=(),
             open_positions=(),
             history_deals=(),
             worker_last_seen=None,
@@ -61,6 +63,7 @@ class RuntimeStateStore:
             balance=None,
             equity=None,
             market_data=(),
+            market_candles=(),
             open_positions=(),
             history_deals=(),
             worker_last_seen=None,
@@ -88,6 +91,7 @@ class RuntimeStateStore:
             balance=None,
             equity=None,
             market_data=(),
+            market_candles=(),
             open_positions=(),
             history_deals=(),
             worker_last_seen=None,
@@ -115,6 +119,7 @@ class RuntimeStateStore:
         balance: Decimal | None = None,
         equity: Decimal | None = None,
         market_data: list[dict] | None = None,
+        market_candles: list[dict] | None = None,
         open_positions: list[dict] | None = None,
         history_deals: list[dict] | None = None,
     ) -> RuntimeState:
@@ -124,6 +129,17 @@ class RuntimeStateStore:
             or self.state.environment != environment
         ):
             raise ValueError("Worker status does not match the configured MT5 account")
+        candle_snapshots = {
+            (snapshot["base_symbol"].upper(), snapshot["timeframe"]): snapshot
+            for snapshot in self.state.market_candles
+        } if connected else {}
+        if connected:
+            for snapshot in market_candles or ():
+                candle_snapshots[(snapshot["base_symbol"].upper(), snapshot["timeframe"])] = {
+                    **snapshot,
+                    "received_at": datetime.now(UTC).isoformat(),
+                }
+
         self.state = replace(
             self.state,
             mt5_connected=connected,
@@ -132,6 +148,7 @@ class RuntimeStateStore:
             balance=balance,
             equity=equity,
             market_data=tuple(market_data or ()),
+            market_candles=tuple(candle_snapshots.values()),
             open_positions=tuple(open_positions or ()),
             history_deals=tuple(history_deals or ()),
             worker_last_seen=datetime.now(UTC),
@@ -139,6 +156,25 @@ class RuntimeStateStore:
             message=message,
         )
         return self.state
+
+    def get_market_candle_snapshot(self, symbol: str, timeframe: str) -> dict | None:
+        if not self.broker_connected():
+            return None
+        normalized_symbol = symbol.upper()
+        snapshot = next(
+            (
+                snapshot for snapshot in self.state.market_candles
+                if snapshot["timeframe"] == timeframe
+                and normalized_symbol in {snapshot["base_symbol"].upper(), snapshot["symbol"].upper()}
+            ),
+            None,
+        )
+        if snapshot is None or "received_at" not in snapshot:
+            return None
+        received_at = datetime.fromisoformat(snapshot["received_at"])
+        if datetime.now(UTC) - received_at > timedelta(seconds=180):
+            return None
+        return snapshot
 
     def broker_connected(self) -> bool:
         state = self.state

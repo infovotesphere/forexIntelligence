@@ -1,24 +1,37 @@
 from datetime import UTC, datetime, timedelta
+from dataclasses import replace
 from decimal import Decimal
 from uuid import uuid4
 
 from trading.strategies.base import StrategySignal
-from trading.signals.validator import validate_signal
+from trading.signals.validator import round_to_tick, validate_signal
 
 
-def generate_validated_signals(symbol: str, timeframe: str, candles, strategies, now: datetime | None = None) -> list[dict]:
+def generate_validated_signals(
+    symbol: str,
+    timeframe: str,
+    candles,
+    strategies,
+    now: datetime | None = None,
+    tick_size: Decimal | None = None,
+) -> list[dict]:
     if len(candles) < 2:
         return []
     now = now or datetime.now(UTC)
     completed = candles[:-1]
     if (now - completed[-1].time).total_seconds() > 24 * 60 * 60:
         return []
-
+    price_step = tick_size or Decimal(1).scaleb(Decimal(str(completed[-1].close)).as_tuple().exponent)
     results: list[dict] = []
     for strategy in strategies:
         candidate: StrategySignal | None = strategy.evaluate(symbol, timeframe, completed)
         if candidate is None:
             continue
+        prices = {
+            field: round_to_tick(getattr(candidate, field), price_step)
+            for field in ("entry", "stop_loss", "take_profit_1", "take_profit_2", "take_profit_3")
+        }
+        candidate = replace(candidate, **{field: float(price) for field, price in prices.items()})
         try:
             validate_signal(candidate)
         except ValueError as exc:
@@ -31,10 +44,10 @@ def generate_validated_signals(symbol: str, timeframe: str, candles, strategies,
                 "created_at": now.isoformat(),
             })
             continue
-        entry = Decimal(str(candidate.entry))
-        stop = Decimal(str(candidate.stop_loss))
+        entry = prices["entry"]
+        stop = prices["stop_loss"]
         risk = entry - stop if candidate.direction == "BUY" else stop - entry
-        reward = Decimal(str(candidate.take_profit_3)) - entry if candidate.direction == "BUY" else entry - Decimal(str(candidate.take_profit_3))
+        reward = prices["take_profit_3"] - entry if candidate.direction == "BUY" else entry - prices["take_profit_3"]
         results.append({
             "signal_id": str(uuid4()),
             "symbol": symbol,
@@ -43,9 +56,9 @@ def generate_validated_signals(symbol: str, timeframe: str, candles, strategies,
             "timeframe": timeframe,
             "entry": str(entry),
             "stop_loss": str(stop),
-            "tp1": str(candidate.take_profit_1),
-            "tp2": str(candidate.take_profit_2),
-            "tp3": str(candidate.take_profit_3),
+            "tp1": str(prices["take_profit_1"]),
+            "tp2": str(prices["take_profit_2"]),
+            "tp3": str(prices["take_profit_3"]),
             "risk_reward_ratio": str(reward / risk),
             "quality_score": candidate.quality_score,
             "explanation": candidate.explanation,

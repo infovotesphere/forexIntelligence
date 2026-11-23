@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Header, HTTPException, Response, status
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from app.core.broker import simulation_adapter
 from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
 from app.core.config import get_settings
@@ -111,6 +111,36 @@ class WorkerDealSnapshot(BaseModel):
     simulated: bool = False
 
 
+class WorkerCandle(BaseModel):
+    time: datetime
+    open: Decimal = Field(gt=0)
+    high: Decimal = Field(gt=0)
+    low: Decimal = Field(gt=0)
+    close: Decimal = Field(gt=0)
+    volume: Decimal = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_ohlc(self) -> "WorkerCandle":
+        if self.time.tzinfo is None or self.time.utcoffset() is None:
+            raise ValueError("Candle timestamps must include a timezone")
+        if self.low > min(self.open, self.close) or self.high < max(self.open, self.close) or self.low > self.high:
+            raise ValueError("Candle prices must satisfy low <= open/close <= high")
+        return self
+
+
+class WorkerCandleSnapshot(BaseModel):
+    base_symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
+    symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
+    timeframe: Literal["M5", "M15", "M30", "H1", "H4", "D1"]
+    candles: list[WorkerCandle] = Field(min_length=2, max_length=260)
+
+    @model_validator(mode="after")
+    def validate_chronological_order(self) -> "WorkerCandleSnapshot":
+        if any(previous.time >= current.time for previous, current in zip(self.candles, self.candles[1:])):
+            raise ValueError("Candle timestamps must be strictly increasing")
+        return self
+
+
 class WorkerStatusUpdate(BaseModel):
     connected: bool
     account_id: str = Field(min_length=1, max_length=64)
@@ -121,6 +151,7 @@ class WorkerStatusUpdate(BaseModel):
     equity: Decimal | None = None
     message: str = Field(max_length=500)
     market_data: list[dict] = Field(default_factory=list, max_length=32)
+    market_candles: list[WorkerCandleSnapshot] = Field(default_factory=list, max_length=48)
     open_positions: list[WorkerOpenPosition] = Field(default_factory=list, max_length=500)
     history_deals: list[WorkerDealSnapshot] = Field(default_factory=list, max_length=500)
 
@@ -155,6 +186,7 @@ def update_mt5_status(
             equity=payload.equity,
             message=payload.message,
             market_data=payload.market_data,
+            market_candles=[snapshot.model_dump(mode="json") for snapshot in payload.market_candles],
             open_positions=[position.model_dump(mode="json") for position in payload.open_positions],
             history_deals=[deal.model_dump(mode="json") for deal in payload.history_deals],
         )

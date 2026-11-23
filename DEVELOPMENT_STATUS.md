@@ -124,11 +124,12 @@ Status: implemented and validated for simulation quotes and the MT5 worker feed.
 
 ## Phase 7 — Signal generation interface
 
-Status: implemented and validated for simulation data.
+Status: implemented for simulation and worker-fed MT5 candle data.
 
 - Signals page can generate strategy candidates by instrument and timeframe
 - Displays entry, stop, three targets, reward/risk, quality and validation details
-- Signal list refreshes periodically and labels its in-memory, simulation-only status
+- Signal list refreshes periodically and identifies each signal's data source
+- Uses broker candles and MT5 tick-size metadata when MT5 is selected; never substitutes simulated candles for a missing MT5 feed
 - API reports validated signals as expired after their four-hour validity window
 - Verification: 33 backend tests pass; frontend production build and focused lint pass
 
@@ -154,11 +155,13 @@ Status: implemented and validated.
 
 ## Phase 10 — Technical market analytics
 
-Status: implemented and validated with simulation candles.
+Status: implemented for simulation candles and worker-fed MT5 candle history.
 
 - Analytics page displays trend, market structure, regime, indicators, support/resistance and strategy candidates
 - Instrument and timeframe can be selected on the page
-- UI explicitly identifies generated simulation candles and does not present them as MT5 data
+- Uses MT5 worker candles when an MT5 account is selected and simulation candles otherwise
+- Analysis refuses to fall back to simulation when the selected MT5 feed is stale or lacks the requested candle history
+- UI labels the data source and reports missing MT5 timeframes
 - Performance analytics remain unavailable until trade history is persisted and reconciled
 - Verification: analysis API tests pass; frontend production build and focused lint pass
 
@@ -172,6 +175,55 @@ Status: read-only worker handoff and dashboard view implemented.
 - Raw MT5 deals are explicitly distinguished from strategy-attributed or reconciled application trades
 - Simulation history remains empty until simulated executions are persisted
 - Verification: 36 backend tests pass; frontend production build and focused lint pass
+
+## Signal price precision
+
+- Candidate entry, stop and target levels are rounded to the symbol tick size before validation and display
+- Reward/risk validation runs on the rounded prices, preventing floating-point artifacts from leaking into generated signals
+- Regression coverage includes XAUUSD cent-tick prices
+
+## Phase 12 — Strategy backtesting
+
+Status: simulation-only candle replay implemented.
+
+- Backtest API replays selected strategies over completed generated candles and returns trade outcomes plus R-based metrics
+- Entry is modeled at the signal candle close; TP3 or stop loss exits are checked on following candles
+- Ambiguous candles where both exit levels are touched conservatively assume stop loss first
+- Spread, slippage, commissions, partial exits and portfolio risk are explicitly not modeled
+- No broker or paper orders are submitted
+- Verification: 42 backend tests pass; frontend production build and focused lint pass; API route works through the dashboard proxy
+
+## Multi-timeframe technical analysis
+
+- Technical analysis API now returns weighted trend consensus and per-timeframe structure for M5 through D1
+- Analytics page displays each interval's direction and structure alongside overall consensus
+- This remains based on generated simulation candles and is clearly labeled as such
+
+## Strategy catalogue
+
+- Strategies page documents the implemented trend-following and breakout/retest entry rules
+- Displays shared stop, reward/risk and expiry guardrails
+- Links to signal generation and backtesting; no strategy is presented as an automated broker executor
+
+## MT5 historical candle feed
+
+- Windows worker sends up to 260 completed/current OHLCV bars for each monitored symbol and supported timeframe, along with broker tick-size metadata
+- Candle snapshots are refreshed once per minute and validated for OHLC consistency and chronological ordering
+- Analysis and signal generation use broker candles while MT5 is selected; a disconnected or incomplete worker feed returns an explicit error instead of silently analyzing simulation data
+- Backtesting remains simulation-only and is labeled separately
+- Verification: 36 backend tests passed; frontend build and focused lint passed; Compose configuration is valid
+- Real broker history delivery still requires validating the updated worker on Windows with an installed MT5 terminal
+
+## Authentication
+
+Status: administrator sign-in and API session protection implemented.
+
+- Provision the first administrator with `BOOTSTRAP_ADMIN_EMAIL` and a 12+ character `BOOTSTRAP_ADMIN_PASSWORD`; no public sign-up route is exposed
+- Docker startup applies Alembic migrations and creates the administrator only when the configured email does not already exist
+- Non-development deployments reject the default or short JWT signing secret
+- The API issues an expiring HttpOnly, SameSite=Lax cookie; the browser reaches the API only through the same-origin Next.js proxy
+- All versioned application APIs require a valid session; health, login/logout, and the separately token-authenticated MT5 worker endpoints are exempt
+- Sign out clears the session cookie; login does not return the JWT to JavaScript
 
 ## Frontend broker controls
 

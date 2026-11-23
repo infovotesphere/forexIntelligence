@@ -24,6 +24,8 @@ async function proxy(request: NextRequest, context: RouteContext) {
     const responseHeaders = new Headers();
     const contentType = response.headers.get("content-type");
     if (contentType) responseHeaders.set("content-type", contentType);
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) responseHeaders.set("set-cookie", setCookie);
     return new NextResponse(response.body, {
       status: response.status,
       headers: responseHeaders,

@@ -1,5 +1,6 @@
 from functools import lru_cache
 from pathlib import Path
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
@@ -17,9 +18,18 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_minutes: int = 60
     cors_origins: str = "http://localhost:3000"
+    bootstrap_admin_email: str = ""
+    bootstrap_admin_password: str = ""
     live_trading_enabled: bool = False
     mt5_encryption_key: str = ""
     mt5_worker_token: str = ""
+
+    @model_validator(mode="after")
+    def require_production_jwt_secret(self) -> "Settings":
+        if self.environment.lower() not in {"development", "test"}:
+            if self.jwt_secret == "change-this-development-secret" or len(self.jwt_secret) < 32:
+                raise ValueError("JWT_SECRET must be a unique, random value of at least 32 characters outside development")
+        return self
 
     @property
     def cors_origin_list(self) -> list[str]:

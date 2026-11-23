@@ -17,6 +17,9 @@ from trading.connectors.mt5 import MT5Adapter
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("forex-mt5-worker")
 MONITORED_SYMBOLS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD")
+TIMEFRAME_MINUTES = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
+CANDLE_HISTORY_BARS = 260
+CANDLE_REFRESH_SECONDS = 60
 
 
 def required_setting(name: str) -> str:
@@ -24,6 +27,39 @@ def required_setting(name: str) -> str:
     if not value:
         raise RuntimeError(f"{name} must be configured")
     return value
+
+
+def collect_market_candles(adapter: MT5Adapter, market_data: list[dict]) -> list[dict]:
+    end = datetime.now(UTC)
+    snapshots = []
+    for quote in market_data:
+        symbol = quote["symbol"]
+        for timeframe, minutes in TIMEFRAME_MINUTES.items():
+            start = end - timedelta(minutes=minutes * CANDLE_HISTORY_BARS)
+            try:
+                candles = adapter.get_historical_candles(symbol, timeframe, start, end)
+            except RuntimeError as exc:
+                logger.warning("MT5 candle history unavailable for %s %s: %s", symbol, timeframe, exc)
+                continue
+            if len(candles) < 2:
+                continue
+            snapshots.append({
+                "base_symbol": quote["base_symbol"],
+                "symbol": symbol,
+                "timeframe": timeframe,
+                "candles": [
+                    {
+                        "time": candle.time.isoformat(),
+                        "open": str(candle.open),
+                        "high": str(candle.high),
+                        "low": str(candle.low),
+                        "close": str(candle.close),
+                        "volume": str(candle.volume),
+                    }
+                    for candle in candles[-CANDLE_HISTORY_BARS:]
+                ],
+            })
+    return snapshots
 
 
 def main() -> None:
@@ -37,6 +73,8 @@ def main() -> None:
     session.headers.update({"Authorization": f"Bearer {worker_token}"})
     adapter: MT5Adapter | None = None
     credentials: dict | None = None
+    last_candle_refresh = 0.0
+    pending_market_candles: list[dict] = []
 
     while True:
         try:
@@ -53,6 +91,8 @@ def main() -> None:
                     server=credentials["server"],
                     environment=credentials["environment"],
                 )
+                last_candle_refresh = 0.0
+                pending_market_candles = []
                 logger.info(
                     "Received MT5 %s connection request for account %s",
                     credentials["environment"],
@@ -67,6 +107,9 @@ def main() -> None:
 
             account = adapter.get_account_info()
             market_data = adapter.get_monitored_quotes(MONITORED_SYMBOLS)
+            if time.monotonic() - last_candle_refresh >= CANDLE_REFRESH_SECONDS:
+                pending_market_candles = collect_market_candles(adapter, market_data)
+                last_candle_refresh = time.monotonic()
             open_positions = adapter.get_open_positions()
             history_deals = adapter.get_deal_history(
                 datetime.now(UTC) - timedelta(days=30),
@@ -82,6 +125,7 @@ def main() -> None:
                     "balance": str(account.balance),
                     "equity": str(account.equity),
                     "market_data": market_data,
+                    "market_candles": pending_market_candles,
                     "open_positions": open_positions,
                     "history_deals": history_deals,
                     "environment": credentials["environment"],
@@ -90,6 +134,7 @@ def main() -> None:
                 timeout=15,
             )
             status_response.raise_for_status()
+            pending_market_candles = []
             time.sleep(5)
         except (requests.RequestException, ConnectionError, PermissionError, RuntimeError, ValueError, KeyError) as exc:
             logger.error("MT5 worker connection/status error: %s", exc)

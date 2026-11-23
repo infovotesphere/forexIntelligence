@@ -2,11 +2,13 @@ from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 
 from app.api.v1 import broker
+from app.core.auth import AUTH_COOKIE_NAME
 from app.core.config import Settings
+from app.core.security import create_access_token
 from app.core.runtime import runtime_store
 from app.main import app
 
-client = TestClient(app)
+client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
 def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticated(monkeypatch):
@@ -75,7 +77,31 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
                     "symbol": "EURUSDm",
                     "bid": "1.10000",
                     "ask": "1.10010",
+                    "tick_size": "0.00001",
                     "time": "2026-11-23T14:00:00+00:00",
+                }],
+                "market_candles": [{
+                    "base_symbol": "EURUSD",
+                    "symbol": "EURUSDm",
+                    "timeframe": "H1",
+                    "candles": [
+                        {
+                            "time": "2026-11-23T13:00:00+00:00",
+                            "open": "1.09900",
+                            "high": "1.10000",
+                            "low": "1.09800",
+                            "close": "1.09950",
+                            "volume": "100",
+                        },
+                        {
+                            "time": "2026-11-23T14:00:00+00:00",
+                            "open": "1.09950",
+                            "high": "1.10100",
+                            "low": "1.09900",
+                            "close": "1.10050",
+                            "volume": "120",
+                        },
+                    ],
                 }],
                 "open_positions": [{
                     "ticket": "98765",
@@ -106,6 +132,10 @@ def test_mt5_demo_credentials_are_encrypted_claimed_once_and_worker_authenticate
             },
         )
         assert status_response.status_code == 200
+        candle_snapshot = runtime_store.get_market_candle_snapshot("EURUSD", "H1")
+        assert candle_snapshot is not None
+        assert candle_snapshot["symbol"] == "EURUSDm"
+        assert candle_snapshot["candles"][0]["close"] == "1.09950"
         current = client.get("/api/v1/accounts/status").json()
         assert current["connected"] is True
         assert current["broker"] == "mt5"

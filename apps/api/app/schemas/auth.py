@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
@@ -6,6 +6,6 @@ class LoginRequest(BaseModel):
     password: str = Field(min_length=8)
 
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
+class AuthenticatedUser(BaseModel):
+    email: EmailStr
+    role: str

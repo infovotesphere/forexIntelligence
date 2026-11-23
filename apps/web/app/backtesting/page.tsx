@@ -1,4 +1,5 @@
 import { Page } from "@/components/Page";
+import { BacktestRunner } from "@/components/BacktestRunner";
 export default function Backtesting() {
-  return <Page title="Backtesting" description="Historical strategy validation" active="/backtesting"><div className="card empty">No backtest runs</div></Page>;
+  return <Page title="Backtesting" description="Simulation replay of strategy rules" active="/backtesting"><BacktestRunner /></Page>;
 }

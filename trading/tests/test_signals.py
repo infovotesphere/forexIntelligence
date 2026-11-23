@@ -41,3 +41,25 @@ def test_signal_generation_never_submits_or_returns_unexpired_signals():
         if signal["status"] == "VALIDATED":
             assert "expires_at" in signal
             assert Decimal(signal["risk_reward_ratio"]) >= Decimal("2")
+
+
+def test_gold_signal_prices_are_rounded_to_symbol_tick_size():
+    adapter = SimulationAdapter()
+    adapter.connect()
+    now = datetime.now(UTC)
+    candles = adapter.get_historical_candles("XAUUSD", "H1", now - timedelta(hours=260), now)
+    generated = generate_validated_signals(
+        "XAUUSD",
+        "H1",
+        candles,
+        [TrendFollowingStrategy(), BreakoutRetestStrategy()],
+        now=now,
+        tick_size=adapter.get_symbol_info("XAUUSD").tick_size,
+    )
+
+    for signal in generated:
+        if signal["status"] == "VALIDATED":
+            for field in ("entry", "stop_loss", "tp1", "tp2", "tp3"):
+                price = Decimal(signal[field])
+                assert price % Decimal("0.01") == 0
+                assert "999999" not in signal[field]

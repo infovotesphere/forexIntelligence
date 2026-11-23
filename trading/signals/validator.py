@@ -1,9 +1,17 @@
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 
 class SignalValidationError(ValueError):
     pass
+
+
+def round_to_tick(value: Decimal | float | int, tick_size: Decimal) -> Decimal:
+    if tick_size <= 0:
+        raise ValueError("Tick size must be positive")
+    return (Decimal(str(value)) / tick_size).quantize(
+        Decimal("1"), rounding=ROUND_HALF_UP
+    ) * tick_size
 
 
 def validate_signal(signal, minimum_reward_risk: Decimal = Decimal("2"), now: datetime | None = None) -> None:

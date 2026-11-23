@@ -20,6 +20,8 @@ type Signal = {
   status: "VALIDATED" | "REJECTED" | "EXPIRED";
   created_at: string;
   expires_at?: string;
+  simulated?: boolean;
+  data_source?: "simulation" | "mt5";
 };
 
 const symbols = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD"];
@@ -81,12 +83,21 @@ export function SignalsPanel() {
 
   const validatedCount = signals.filter((signal) => signal.status === "VALIDATED").length;
   const expiredCount = signals.filter((signal) => signal.status === "EXPIRED").length;
+  const hasMt5Signals = signals.some((signal) => signal.data_source === "mt5" || signal.simulated === false);
+  const hasSimulationSignals = signals.some((signal) => signal.data_source === "simulation" || signal.simulated !== false);
+  const sourceLabel = signals.length === 0
+    ? "No signal history"
+    : hasMt5Signals && hasSimulationSignals
+      ? "Mixed data sources"
+      : hasMt5Signals
+        ? "MT5 candle history"
+        : "In-memory · simulation";
 
   return (
     <div className="signals-content">
       <div className="signal-warning" role="note">
-        <strong>Simulation only</strong>
-        <span>Signals use generated simulation candles, not MT5 market history. They are informational and never place orders.</span>
+        <strong>Broker-aware analysis · no execution</strong>
+        <span>Uses MT5 worker candle history when an MT5 account is selected; otherwise uses generated simulation candles. Signals never place orders.</span>
       </div>
       <section className="card panel signal-controls">
         <div>
@@ -116,7 +127,7 @@ export function SignalsPanel() {
       <section className="card signal-list">
         <div className="signal-list-heading">
           <div><h2>Recent signals</h2><p>{validatedCount} active · {expiredCount} expired</p></div>
-          <span className="pill">In-memory · simulation</span>
+        <span className="pill">{sourceLabel}</span>
         </div>
         {loading && signals.length === 0 ? (
           <div className="empty signal-empty">Loading signals...</div>
@@ -131,7 +142,7 @@ export function SignalsPanel() {
               <tbody>
                 {signals.map((signal, index) => (
                   <tr key={signal.signal_id ?? `${signal.symbol}-${signal.created_at}-${index}`}>
-                    <td><strong>{signal.symbol}</strong><span className="signal-meta">{signal.strategy} · {signal.timeframe}</span></td>
+                    <td><strong>{signal.symbol}</strong><span className="signal-meta">{signal.strategy} · {signal.timeframe} · {signal.data_source === "mt5" || signal.simulated === false ? "MT5" : "SIM"}</span></td>
                     <td><span className={`signal-direction ${signal.direction === "BUY" ? "buy-direction" : signal.direction === "SELL" ? "sell-direction" : ""}`}>{signal.direction ?? "—"}</span></td>
                     <td>{signal.entry ? <>{signal.entry}<span className="signal-meta">SL {signal.stop_loss}</span></> : "—"}</td>
                     <td>{signal.tp1 ? <>{signal.tp1}<span className="signal-meta">TP2 {signal.tp2} · TP3 {signal.tp3}</span></> : "—"}</td>

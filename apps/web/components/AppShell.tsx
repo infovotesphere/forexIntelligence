@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogoutButton } from "./LogoutButton";
 import { StatusBar } from "./StatusBar";
 
 const nav = [
@@ -26,6 +27,7 @@ export function AppShell({ children, active = "/dashboard" }: { children: React.
       <div className="main">
         <header className="topbar">
           <StatusBar />
+          <LogoutButton />
         </header>
         {children}
       </div>

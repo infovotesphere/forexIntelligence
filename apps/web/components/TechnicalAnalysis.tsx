@@ -23,8 +23,14 @@ type Analysis = {
   regime: string;
   indicators: Record<string, number>;
   support_resistance: { support: number[]; resistance: number[] };
+  multi_timeframe: {
+    consensus: string;
+    timeframes: Record<string, { structure: string; direction: string }>;
+  };
   strategy_signals: StrategySignal[];
   simulated: boolean;
+  data_source: "simulation" | "mt5";
+  missing_timeframes?: string[];
   status?: string;
 };
 
@@ -78,8 +84,18 @@ export function TechnicalAnalysis() {
   return (
     <div className="analysis-content">
       <div className="signal-warning" role="note">
-        <strong>Simulation candle data</strong>
-        <span>This analysis uses generated development candles, even when an MT5 account is connected. It is not broker-market analysis or financial advice.</span>
+        <strong>
+          {analysis
+            ? analysis.data_source === "mt5" ? "MT5 broker candles · read only" : "Simulation candle data"
+            : "Analysis data source"}
+        </strong>
+        <span>
+          {!analysis
+            ? "When MT5 is selected, analysis requires candle history from the Windows worker; otherwise generated simulation candles are used."
+            : analysis.data_source === "mt5"
+              ? "Analysis is based on candle history reported by the Windows MT5 worker. Signals are informational; no orders are placed."
+              : "This analysis uses generated development candles, not broker-market analysis."}
+        </span>
       </div>
       <section className="card panel analysis-controls">
         <div>
@@ -133,6 +149,27 @@ export function TechnicalAnalysis() {
               <div className="analysis-levels">{analysis.support_resistance.support.length ? analysis.support_resistance.support.map((level) => <span className="pill" key={level}>{level}</span>) : <span className="analysis-muted">No levels found</span>}</div>
               <h3>Resistance</h3>
               <div className="analysis-levels">{analysis.support_resistance.resistance.length ? analysis.support_resistance.resistance.map((level) => <span className="pill" key={level}>{level}</span>) : <span className="analysis-muted">No levels found</span>}</div>
+            </div>
+          </section>
+          <section className="card panel analysis-panel">
+            <div className="analysis-mtf-heading">
+              <div>
+                <h2>Multi-timeframe consensus</h2>
+                <p>Weighted trend alignment across available intervals.</p>
+                {analysis.missing_timeframes?.length ? (
+                    <p className="analysis-muted">MT5 history not yet available: {analysis.missing_timeframes.join(", ")}</p>
+                ) : null}
+              </div>
+              <span className={`analysis-consensus ${analysis.multi_timeframe.consensus}`}>{analysis.multi_timeframe.consensus}</span>
+            </div>
+            <div className="analysis-timeframes">
+              {Object.entries(analysis.multi_timeframe.timeframes).map(([interval, context]) => (
+                <article className="analysis-timeframe" key={interval}>
+                  <strong>{interval}</strong>
+                  <span className={`analysis-label ${context.direction}`}>{context.direction}</span>
+                  <span>{context.structure.replaceAll("_", " ")}</span>
+                </article>
+              ))}
             </div>
           </section>
           <section className="card signal-list analysis-strategies">

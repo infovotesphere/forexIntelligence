@@ -148,6 +148,7 @@ class MT5Adapter(BrokerConnector):
                 "ask": str(tick.ask),
                 "time": tick.time.isoformat(),
                 "digits": info.digits,
+                "tick_size": str(info.tick_size),
             })
         return quotes
 
