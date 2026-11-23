@@ -1,0 +1,66 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: forex
+      POSTGRES_USER: forex
+      POSTGRES_PASSWORD: forex
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U forex -d forex"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: python:3.11-slim
+    working_dir: /app
+    volumes:
+      - ./apps/api:/app
+      - ./trading:/trading
+      - ./shared:/shared
+    command: sh -c "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    environment:
+      PYTHONPATH: /app:/trading/..:/shared/..
+      DATABASE_URL: postgresql+psycopg://forex:forex@postgres:5432/forex
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: http://localhost:3000
+      MT5_ENCRYPTION_KEY: ${MT5_ENCRYPTION_KEY:-}
+      MT5_WORKER_TOKEN: ${MT5_WORKER_TOKEN:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    image: node:22-alpine
+    working_dir: /app
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev"
+    environment:
+      - API_INTERNAL_URL=http://api:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:
