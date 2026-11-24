@@ -13,7 +13,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (pathname === "/login") return;
+    if (pathname === "/login" || pathname === "/register") return;
 
     let active = true;
     fetch("/api/v1/auth/me", { cache: "no-store" })
@@ -36,7 +36,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     };
   }, [attempt, pathname, router]);
 
-  if (pathname === "/login" || (state === "authenticated" && verifiedPath === pathname)) return children;
+  if (pathname === "/login" || pathname === "/register" || (state === "authenticated" && verifiedPath === pathname)) return children;
   if (state === "unavailable" && verifiedPath === pathname) {
     return (
       <main className="auth-screen">

@@ -53,6 +53,7 @@ export function MT5ConnectionForm() {
         </div>
         <span className="pill">Paper trading only</span>
       </div>
+      <p className="worker-device-note">This form works on mobile and desktop. The MT5 terminal and its Windows worker must still be running on a Windows PC or VPS; an iPad can submit credentials but cannot run the MT5 worker.</p>
       <div className="account-mode" role="group" aria-label="MT5 account environment">
         <button
           type="button"

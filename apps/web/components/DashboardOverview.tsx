@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { DashboardPerformance } from "./DashboardPerformance";
 
 type AccountStatus = {
   connected: boolean;
@@ -75,6 +76,8 @@ export function DashboardOverview() {
         <div className="card metric"><div className="metric-label">Broker</div><div className="metric-value dashboard-small-value">{accountLabel}</div></div>
         <div className="card metric"><div className="metric-label">Trading engine</div><div className="metric-value dashboard-small-value">{account?.engine_running ? "Running · paper" : account?.environment === "live" ? "Read-only" : "Stopped"}</div></div>
       </section>
+
+      <DashboardPerformance />
 
       <section className="grid two-col">
         <div className="card panel dashboard-panel">

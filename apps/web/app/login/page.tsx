@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 export default function Login() {
@@ -36,7 +37,7 @@ export default function Login() {
       <section className="card auth-card">
         <div className="brand" style={{ marginBottom: 12 }}><span className="brand-mark">FI</span><span>Forex Intelligence</span></div>
         <h1>Sign in</h1>
-        <p className="safety-note">Use the administrator account configured for this installation.</p>
+        <p className="safety-note">Sign in to your Forex Intelligence account.</p>
         <form className="mt5-form" onSubmit={submit}>
           <label>
             Email
@@ -51,6 +52,7 @@ export default function Login() {
             {busy ? "Signing in…" : "Sign in"}
           </button>
         </form>
+        <p className="account-link">New here? <Link href="/register">Create an account</Link></p>
       </section>
     </main>
   );

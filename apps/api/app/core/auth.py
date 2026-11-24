@@ -23,7 +23,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         route = path.removeprefix(api_prefix)
-        if route in {"/auth/login", "/auth/logout", "/health"} or route.startswith("/worker/mt5/"):
+        if route in {"/auth/login", "/auth/logout", "/auth/register", "/health"} or route.startswith("/worker/mt5/"):
             return await call_next(request)
 
         token = request.cookies.get(AUTH_COOKIE_NAME)
@@ -42,6 +42,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         role = claims.get("role")
         if not isinstance(subject, str) or not isinstance(role, str):
             return JSONResponse({"detail": "Invalid or expired session"}, status_code=401)
+
+        administrator_routes = {
+            "/accounts/connect",
+            "/accounts/disconnect",
+            "/engine/start",
+            "/engine/stop",
+        }
+        if route in administrator_routes and request.method != "GET" and role != "administrator":
+            return JSONResponse({"detail": "Administrator access required"}, status_code=403)
 
         request.state.user = {"email": subject, "role": role}
         return await call_next(request)
