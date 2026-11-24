@@ -68,6 +68,8 @@ type PositionLevelRow = {
   digits: number;
 };
 
+const EMPTY_POSITIONS: PositionOverlay[] = [];
+
 function toTimestamp(value: string): UTCTimestamp {
   return Math.floor(Date.parse(value) / 1000) as UTCTimestamp;
 }
@@ -77,7 +79,7 @@ export function CandlestickReplay({
   markers,
   visibleCount,
   live = false,
-  positions = [],
+  positions = EMPTY_POSITIONS,
   entryTickSize,
   selectedEntryPrice,
   onEntryPriceSelect,
@@ -496,7 +498,7 @@ export function CandlestickReplay({
   useEffect(() => {
     const series = candleSeriesRef.current;
     if (!chartReady || !series || !onPositionLevelChange) {
-      setPositionLevelRows([]);
+      setPositionLevelRows((rows) => rows.length === 0 ? rows : []);
       return;
     }
 

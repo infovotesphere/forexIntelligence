@@ -327,14 +327,18 @@ export function OrderActivity() {
           <div className="history-table-wrap">
             <table className="table history-table">
               <thead>
-                <tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr>
+                <tr><th>Date / Deal / Order</th><th>Instrument</th><th>Side</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr>
               </thead>
               <tbody>
                 {deals.map((deal) => (
                   <tr key={deal.ticket}>
-                    <td>{new Date(deal.time).toLocaleString()}</td>
-                    <td>{deal.ticket}</td>
-                    <td>{deal.order || "—"}</td>
+                    <td className="history-record-cell">
+                      <div className="history-record-stack">
+                        <time className="history-record-date" dateTime={deal.time}>{new Date(deal.time).toLocaleString()}</time>
+                        <div className="history-record-meta"><span>Deal</span><strong>{deal.ticket}</strong></div>
+                        <div className="history-record-meta"><span>Order</span><strong>{deal.order || "—"}</strong></div>
+                      </div>
+                    </td>
                     <td><strong>{deal.symbol || "—"}</strong></td>
                     <td>{deal.direction}</td>
                     <td>{deal.volume}</td>
@@ -362,13 +366,17 @@ export function OrderActivity() {
         ) : (
           <div className="history-table-wrap">
             <table className="table history-table">
-              <thead><tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr></thead>
+              <thead><tr><th>Date / Deal / Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr></thead>
               <tbody>
                 {practiceHistory.items.map((deal) => (
                   <tr key={deal.ticket}>
-                    <td>{new Date(deal.time).toLocaleString()}</td>
-                    <td>{deal.ticket}</td>
-                    <td>{deal.order || "—"}</td>
+                    <td className="history-record-cell">
+                      <div className="history-record-stack">
+                        <time className="history-record-date" dateTime={deal.time}>{new Date(deal.time).toLocaleString()}</time>
+                        <div className="history-record-meta"><span>Deal</span><strong>{deal.ticket}</strong></div>
+                        <div className="history-record-meta"><span>Order</span><strong>{deal.order || "—"}</strong></div>
+                      </div>
+                    </td>
                     <td><strong>{deal.symbol || "—"}</strong></td>
                     <td>{deal.direction}</td>
                     <td>{deal.deal_type ?? "DEAL"}</td>

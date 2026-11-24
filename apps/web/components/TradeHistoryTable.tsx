@@ -145,14 +145,18 @@ export function TradeHistoryTable() {
               <div className="history-table-wrap">
                 <table className="table history-table">
                   <thead>
-                    <tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Profit</th><th>Commission</th><th>Swap</th><th>Net</th></tr>
+                    <tr><th>Date / Deal / Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Profit</th><th>Commission</th><th>Swap</th><th>Net</th></tr>
                   </thead>
                   <tbody>
                     {pageDeals.map((deal) => (
                       <tr key={deal.ticket}>
-                        <td>{new Date(deal.time).toLocaleString()}</td>
-                        <td>{deal.ticket}</td>
-                        <td>{deal.order || "—"}</td>
+                        <td className="history-record-cell">
+                          <div className="history-record-stack">
+                            <time className="history-record-date" dateTime={deal.time}>{new Date(deal.time).toLocaleString()}</time>
+                            <div className="history-record-meta"><span>Deal</span><strong>{deal.ticket}</strong></div>
+                            <div className="history-record-meta"><span>Order</span><strong>{deal.order || "—"}</strong></div>
+                          </div>
+                        </td>
                         <td>{deal.symbol || "—"}</td>
                         <td><span className={`signal-direction ${deal.direction === "BUY" ? "buy-direction" : deal.direction === "SELL" ? "sell-direction" : ""}`}>{deal.direction}</span></td>
                         <td>{deal.deal_type ?? "DEAL"}</td>
