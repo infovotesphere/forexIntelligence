@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { startVisiblePolling } from "@/services/polling";
 
 type BrokerDeal = {
+  ticket: string;
+  order: string;
+  symbol: string;
+  direction: "BUY" | "SELL" | "OTHER";
+  volume: string;
+  price: string;
+  profit: string;
+  commission: string;
+  swap: string;
   time: string;
   net_profit: string;
+  deal_type?: "ENTRY" | "EXIT";
 };
 
 type HistoryData = {
@@ -81,6 +91,11 @@ function formatAmount(value: number, currency: string): string {
 function formatCalendarAmount(value: number): string {
   const amount = Math.abs(value).toLocaleString(undefined, { notation: "compact", maximumFractionDigits: 1 });
   return `${value < 0 ? "−" : value > 0 ? "+" : ""}${amount}`;
+}
+
+function formatDealAmount(value: string, currency: string): string {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? formatAmount(amount, currency) : "—";
 }
 
 function BarChart({ days, currency }: { days: DailyResult[]; currency: string }) {
@@ -308,11 +323,20 @@ function PerformanceCalendar({
 export function DashboardPerformance() {
   const [history, setHistory] = useState<HistoryData | null>(null);
   const [error, setError] = useState("");
+  const [dialogDay, setDialogDay] = useState<string | null>(null);
+  const dayTradesDialogRef = useRef<HTMLDialogElement>(null);
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [selectedDay, setSelectedDay] = useState(() => dateKey(new Date()));
+
+  useEffect(() => {
+    const dialog = dayTradesDialogRef.current;
+    if (!dialog) return;
+    if (dialogDay && !dialog.open) dialog.showModal();
+    if (!dialogDay && dialog.open) dialog.close();
+  }, [dialogDay]);
 
   useEffect(() => {
     let active = true;
@@ -339,6 +363,12 @@ export function DashboardPerformance() {
 
   const dailyResults = useMemo(() => buildDailyResults(history?.items ?? []), [history]);
   const dailyTotals = useMemo(() => aggregateDeals(history?.items ?? []), [history]);
+  const selectedDayDeals = useMemo(
+    () => dialogDay ? (history?.items ?? []).filter((deal) => dateKey(new Date(deal.time)) === dialogDay) : [],
+    [dialogDay, history],
+  );
+  const selectedDayNet = selectedDayDeals.reduce((total, deal) => total + Number(deal.net_profit), 0);
+  const dialogDate = dialogDay ? new Date(`${dialogDay}T00:00:00`) : null;
   const todayKey = dateKey(new Date());
   const today = dailyResults.find((day) => day.key === todayKey);
   const hasDeals = dailyResults.some((day) => day.deals > 0);
@@ -379,7 +409,10 @@ export function DashboardPerformance() {
           currency={currency}
           periodDays={history?.period_days ?? 30}
           selectedDay={selectedDay}
-          onSelectDay={setSelectedDay}
+          onSelectDay={(key) => {
+            setSelectedDay(key);
+            setDialogDay(key);
+          }}
           onChangeMonth={(offset) => {
             const nextMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + offset, 1);
             const today = new Date();
@@ -408,6 +441,62 @@ export function DashboardPerformance() {
         </div>
       </div>
       <p className="performance-footnote">Calendar and charts use raw broker deals, including manual activity; results are not attributed to this app&apos;s strategies. Available broker history is limited to the last {history?.period_days ?? 30} days. Refreshes every 30 seconds.</p>
+      <dialog
+        ref={dayTradesDialogRef}
+        className="performance-day-dialog"
+        aria-labelledby="performance-day-dialog-title"
+        onCancel={(event) => { event.preventDefault(); setDialogDay(null); }}
+      >
+        {dialogDay && dialogDate && (
+          <>
+            <header className="performance-day-dialog-header">
+              <span className="performance-day-dialog-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5" /><path d="M7.5 3.5v3M16.5 3.5v3M4 9.5h16M8 13h3M8 16h2" /></svg>
+              </span>
+              <div>
+                <span className="system-eyebrow">Daily trade ledger</span>
+                <h2 id="performance-day-dialog-title">{dialogDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h2>
+                <p>Every deal recorded for this day · local time</p>
+              </div>
+              <button className="modal-close" type="button" aria-label="Close trade details" onClick={() => setDialogDay(null)}>×</button>
+            </header>
+            <div className="performance-day-dialog-summary">
+              <div><span>Deals</span><strong>{selectedDayDeals.length}</strong></div>
+              <div><span>Net result</span><strong className={selectedDayNet < 0 ? "position-loss" : selectedDayNet > 0 ? "position-profit" : ""}>{formatAmount(selectedDayNet, currency)}</strong></div>
+            </div>
+            {selectedDayDeals.length === 0 ? (
+              <div className="empty performance-day-dialog-empty">No trades were recorded for this day.</div>
+            ) : (
+              <ol className="performance-day-trade-list">
+                {selectedDayDeals.map((deal, index) => (
+                  <li className="performance-day-trade" key={`${deal.ticket}-${deal.time}`}>
+                    <div className="performance-day-trade-heading">
+                      <div>
+                        <span className="performance-day-trade-index">TRADE {String(index + 1).padStart(2, "0")} · {deal.deal_type === "ENTRY" ? "ENTRY" : deal.deal_type === "EXIT" ? "EXIT" : "BROKER DEAL"}</span>
+                        <h3>{deal.symbol || "Unknown instrument"}</h3>
+                      </div>
+                      <span className={`signal-direction ${deal.direction === "BUY" ? "buy-direction" : deal.direction === "SELL" ? "sell-direction" : ""}`}>{deal.direction}</span>
+                    </div>
+                    <time className="performance-day-trade-time" dateTime={deal.time}>{new Date(deal.time).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" })}</time>
+                    <dl className="performance-day-trade-identifiers">
+                      <div><dt>Deal ID</dt><dd>{deal.ticket}</dd></div>
+                      <div><dt>Order ID</dt><dd>{deal.order || "—"}</dd></div>
+                    </dl>
+                    <dl className="performance-day-trade-metrics">
+                      <div><dt>Volume</dt><dd>{deal.volume}</dd></div>
+                      <div><dt>Price</dt><dd>{deal.price}</dd></div>
+                      <div><dt>Profit</dt><dd>{formatDealAmount(deal.profit, currency)}</dd></div>
+                      <div><dt>Commission</dt><dd>{formatDealAmount(deal.commission, currency)}</dd></div>
+                      <div><dt>Swap</dt><dd>{formatDealAmount(deal.swap, currency)}</dd></div>
+                      <div className="performance-day-trade-net"><dt>Net result</dt><dd className={Number(deal.net_profit) < 0 ? "position-loss" : Number(deal.net_profit) > 0 ? "position-profit" : ""}>{formatDealAmount(deal.net_profit, currency)}</dd></div>
+                    </dl>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </>
+        )}
+      </dialog>
     </section>
   );
 }

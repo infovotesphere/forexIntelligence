@@ -505,6 +505,36 @@ button, input, select { font: inherit; }
 .performance-calendar-selected > div:last-child { text-align: right; }
 .performance-calendar-selected span { color: #8193a6; font-size: 9px; }
 .performance-calendar-selected strong { font-size: 11px; font-variant-numeric: tabular-nums; }
+.performance-day-dialog { width: min(760px, calc(100vw - 32px)); max-width: none; max-height: min(88dvh, 900px); overflow: auto; margin: auto; border: 1px solid #2b3c4b; border-radius: 18px; padding: 0; background: radial-gradient(ellipse at 92% 0, rgba(42,199,154,.08), transparent 34%), #0e1722; color: var(--foreground); box-shadow: 0 28px 90px rgba(0,0,0,.68); }
+.performance-day-dialog::backdrop { background: rgba(2,7,12,.78); backdrop-filter: blur(6px); }
+.performance-day-dialog-header { position: sticky; z-index: 1; top: 0; display: flex; align-items: flex-start; gap: 13px; padding: 20px 22px 16px; border-bottom: 1px solid var(--border); background: rgba(14,23,34,.96); backdrop-filter: blur(14px); }
+.performance-day-dialog-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(53,200,149,.24); border-radius: 12px; background: rgba(16,54,44,.34); color: #75d6bd; }
+.performance-day-dialog-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.performance-day-dialog-header > div { min-width: 0; }
+.performance-day-dialog-header h2 { margin: 4px 0; font-size: 17px; letter-spacing: -.02em; }
+.performance-day-dialog-header p { margin: 0; color: #8293a4; font-size: 10px; }
+.performance-day-dialog-header .modal-close { margin-left: auto; }
+.performance-day-dialog-summary { display: flex; gap: 10px; padding: 14px 22px; border-bottom: 1px solid var(--border); }
+.performance-day-dialog-summary > div { display: grid; min-width: 110px; gap: 5px; border: 1px solid rgba(40,57,72,.72); border-radius: 9px; padding: 9px 11px; background: rgba(8,13,20,.48); }
+.performance-day-dialog-summary span { color: #8193a6; font-size: 9px; }
+.performance-day-dialog-summary strong { color: #dce7ef; font-size: 13px; font-variant-numeric: tabular-nums; }
+.performance-day-trade-list { display: grid; gap: 10px; margin: 0; padding: 14px 22px 20px; list-style: none; }
+.performance-day-trade { overflow: hidden; border: 1px solid rgba(40,57,72,.9); border-radius: 11px; background: linear-gradient(135deg, rgba(18,30,43,.9), rgba(8,13,20,.68)); }
+.performance-day-trade-heading { display: flex; align-items: center; gap: 10px; padding: 13px 15px 3px; }
+.performance-day-trade-heading > div { min-width: 0; }
+.performance-day-trade-index { color: #75d6bd; font-size: 8px; font-weight: 750; letter-spacing: .1em; }
+.performance-day-trade-heading h3 { margin: 4px 0 0; color: #e6edf4; font-size: 13px; }
+.performance-day-trade-heading .signal-direction { margin-left: auto; }
+.performance-day-trade-time { display: block; padding: 0 15px 10px; color: #8293a4; font-size: 10px; font-variant-numeric: tabular-nums; }
+.performance-day-trade-identifiers { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0 15px 12px; }
+.performance-day-trade-identifiers > div { display: grid; min-width: 0; gap: 3px; }
+.performance-day-trade-identifiers dt, .performance-day-trade-metrics dt { color: #718397; font-size: 8px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.performance-day-trade-identifiers dd { overflow-wrap: anywhere; margin: 0; color: #bac8d4; font-size: 10px; font-variant-numeric: tabular-nums; }
+.performance-day-trade-metrics { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin: 0; border-top: 1px solid rgba(40,57,72,.72); padding: 11px 15px 13px; background: rgba(5,10,16,.24); }
+.performance-day-trade-metrics > div { display: grid; min-width: 0; gap: 4px; }
+.performance-day-trade-metrics dd { overflow-wrap: anywhere; margin: 0; color: #d3dee7; font-size: 10px; font-variant-numeric: tabular-nums; }
+.performance-day-trade-metrics .performance-day-trade-net dd { font-weight: 750; }
+.performance-day-dialog-empty { min-height: 120px; border: 0; }
 .performance-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 20px 14px; }
 .performance-chart-card { min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 9px; background: rgba(8,13,20,.45); }
 .performance-chart-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 13px 14px 0; }
@@ -729,6 +759,29 @@ button, input, select { font: inherit; }
 .practice-position-error { margin: 10px 16px; font-size: 11px; }
 .practice-position-dialog { width: min(440px, calc(100vw - 28px)); max-width: 440px; margin: auto; overflow: hidden; border: 1px solid #2b3c4b; border-radius: 14px; padding: 0; background: #0e1722; color: var(--foreground); box-shadow: 0 24px 80px rgba(0,0,0,.62); }
 .practice-position-dialog::backdrop { background: rgba(2,7,12,.72); backdrop-filter: blur(4px); }
+.order-cancel-dialog { width: min(480px, calc(100vw - 28px)); max-width: 480px; overflow: hidden; margin: auto; border: 1px solid #35404b; border-radius: 16px; padding: 0; background: radial-gradient(ellipse at 92% 0, rgba(239,106,106,.07), transparent 40%), #0e1722; color: var(--foreground); box-shadow: 0 26px 84px rgba(0,0,0,.68); }
+.order-cancel-dialog::backdrop { background: rgba(2,7,12,.78); backdrop-filter: blur(5px); }
+.order-cancel-shell { padding: 20px; }
+.order-cancel-header { display: flex; align-items: flex-start; gap: 12px; }
+.order-cancel-header > div { min-width: 0; }
+.order-cancel-header h2 { margin: 4px 0; font-size: 17px; }
+.order-cancel-header p { margin: 0; color: #8293a4; font-size: 10px; }
+.order-cancel-header .modal-close { margin-left: auto; }
+.order-cancel-icon { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(239,106,106,.24); border-radius: 11px; background: rgba(71,28,33,.32); color: #f29393; }
+.order-cancel-icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.order-cancel-details { margin-top: 18px; border: 1px solid rgba(40,57,72,.9); border-radius: 11px; background: rgba(8,13,20,.48); }
+.order-cancel-instrument { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 13px 14px; border-bottom: 1px solid rgba(40,57,72,.72); }
+.order-cancel-instrument > span { color: #e6edf4; font-size: 15px; font-weight: 700; letter-spacing: .01em; }
+.order-cancel-instrument > strong { color: #d3dee7; font-size: 9px; letter-spacing: .07em; text-transform: uppercase; }
+.order-cancel-details dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 13px 14px; }
+.order-cancel-details dl > div { display: grid; min-width: 0; gap: 5px; }
+.order-cancel-details dt { color: #718397; font-size: 8px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.order-cancel-details dd { overflow-wrap: anywhere; margin: 0; color: #d3dee7; font-size: 11px; font-variant-numeric: tabular-nums; }
+.order-cancel-notice { margin: 0; border-top: 1px solid rgba(40,57,72,.72); padding: 10px 14px; color: #a7b5c3; font-size: 10px; line-height: 1.5; }
+.order-cancel-error { margin: 12px 0 0; }
+.order-cancel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
+.order-cancel-actions button { min-height: 38px; }
+.order-cancel-dialog button:disabled { opacity: .55; cursor: wait; }
 .practice-position-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
 .practice-position-dialog-header h2 { margin: 4px 0; font-size: 17px; }
 .practice-position-dialog-header p { margin: 0; color: #8293a4; font-size: 11px; }
@@ -1093,6 +1146,13 @@ button, input, select { font: inherit; }
   .practice-position-dialog-header { padding: 16px; }
   .practice-position-form { padding: 16px; }
   .practice-position-summary { padding-inline: 16px; }
+  .performance-day-dialog { position: fixed; inset: auto 0 0; width: 100%; max-height: min(92dvh, 900px); margin: 0 auto; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .performance-day-dialog-header { padding: 17px 16px 14px; }
+  .performance-day-dialog-summary { padding: 12px 16px; }
+  .performance-day-trade-list { gap: 8px; padding: 12px 16px 16px; }
+  .performance-day-trade-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .order-cancel-dialog { position: fixed; inset: auto 0 0; width: 100%; max-width: none; margin: 0 auto; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .order-cancel-shell { padding: 17px 16px; }
 }
 @media (max-width: 400px) {
   .practice-form-fields, .practice-protection-fields { grid-template-columns: 1fr; }
@@ -1110,6 +1170,8 @@ button, input, select { font: inherit; }
   .notification-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .notification-actions > button { flex: 1 1 170px; }
   .metrics { grid-template-columns: 1fr 1fr; }
+  .performance-day-trade-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .order-cancel-details dl { grid-template-columns: 1fr 1fr; }
   .market-controls { flex-wrap: wrap; padding: 11px 14px 2px; }
   .market-search { width: 100%; max-width: none; }
   .market-category-list { padding-inline: 14px; }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { startVisiblePolling } from "@/services/polling";
 import { SimulationTradeTicket } from "@/components/SimulationTradeTicket";
 
@@ -87,6 +87,16 @@ export function OrderActivity() {
   const [error, setError] = useState("");
   const [busyTicket, setBusyTicket] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
+  const [pendingCancellation, setPendingCancellation] = useState<PendingOrder | null>(null);
+  const [cancelError, setCancelError] = useState("");
+  const cancelDialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = cancelDialogRef.current;
+    if (!dialog) return;
+    if (pendingCancellation && !dialog.open) dialog.showModal();
+    if (!pendingCancellation && dialog.open) dialog.close();
+  }, [pendingCancellation]);
 
   useEffect(() => {
     let active = true;
@@ -143,17 +153,23 @@ export function OrderActivity() {
 
   async function cancelPendingOrder(order: PendingOrder) {
     setBusyTicket(order.ticket);
-    setError("");
+    setCancelError("");
     try {
       const response = await fetch(`/api/v1/practice/orders/${encodeURIComponent(order.ticket)}`, { method: "DELETE" });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail ?? "Pending order could not be cancelled");
       setRefreshVersion((version) => version + 1);
+      setPendingCancellation(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Pending order could not be cancelled");
+      setCancelError(cause instanceof Error ? cause.message : "Pending order could not be cancelled");
     } finally {
       setBusyTicket("");
     }
+  }
+
+  function requestCancelPendingOrder(order: PendingOrder) {
+    setCancelError("");
+    setPendingCancellation(order);
   }
 
   const openPositions = (positions?.items ?? []).filter((position) => !position.simulated);
@@ -299,7 +315,7 @@ export function OrderActivity() {
                     <td>{Number(order.stop_loss) > 0 ? order.stop_loss : "—"}</td>
                     <td>{Number(order.take_profit) > 0 ? order.take_profit : "—"}</td>
                     <td>
-                      <button className="practice-close-button" type="button" aria-label={`Cancel ${order.order_type.replace("_", " ")} ${order.symbol}`} title="Cancel pending order" disabled={busyTicket === order.ticket} onClick={() => void cancelPendingOrder(order)}>
+                      <button className="practice-close-button" type="button" aria-label={`Cancel ${order.order_type.replace("_", " ")} ${order.symbol}`} title="Cancel pending order" disabled={busyTicket === order.ticket} onClick={() => requestCancelPendingOrder(order)}>
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
                         <span>{busyTicket === order.ticket ? "Cancelling…" : "Cancel"}</span>
                       </button>
@@ -394,6 +410,52 @@ export function OrderActivity() {
       <p className="safety-note" style={{ marginTop: 12 }}>
         Practice trades use an isolated virtual account. Broker positions remain read-only; MT5 receives no practice orders.
       </p>
+      <dialog
+        ref={cancelDialogRef}
+        className="order-cancel-dialog"
+        aria-labelledby="order-cancel-dialog-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (busyTicket) return;
+          setPendingCancellation(null);
+          setCancelError("");
+        }}
+      >
+        {pendingCancellation && (
+          <div className="order-cancel-shell">
+            <header className="order-cancel-header">
+              <span className="order-cancel-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M5 7h14M9 7V4h6v3m-8 0 1 13h8l1-13M10 11v5m4-5v5" /></svg>
+              </span>
+              <div>
+                <span className="system-eyebrow">Pending order action</span>
+                <h2 id="order-cancel-dialog-title">Cancel this order?</h2>
+                <p>Review the order details before confirming.</p>
+              </div>
+              <button className="modal-close" type="button" aria-label="Close cancellation dialog" disabled={Boolean(busyTicket)} onClick={() => { setPendingCancellation(null); setCancelError(""); }}>×</button>
+            </header>
+            <div className="order-cancel-details">
+              <div className="order-cancel-instrument">
+                <span>{pendingCancellation.symbol}</span>
+                <strong className={pendingCancellation.direction === "BUY" ? "buy-direction" : "sell-direction"}>{pendingCancellation.order_type.replaceAll("_", " ")}</strong>
+              </div>
+              <dl>
+                <div><dt>Order ID</dt><dd>{pendingCancellation.ticket}</dd></div>
+                <div><dt>Volume</dt><dd>{pendingCancellation.volume}</dd></div>
+                <div><dt>Trigger price</dt><dd>{pendingCancellation.stop_price}</dd></div>
+              </dl>
+              <p className="order-cancel-notice">This removes the pending practice order only. No broker order will be changed.</p>
+            </div>
+            {cancelError && <p className="error-text order-cancel-error" role="alert">{cancelError}</p>}
+            <footer className="order-cancel-actions">
+              <button className="secondary-button" type="button" disabled={Boolean(busyTicket)} onClick={() => { setPendingCancellation(null); setCancelError(""); }}>Keep order</button>
+              <button className="danger-button" type="button" disabled={Boolean(busyTicket)} onClick={() => void cancelPendingOrder(pendingCancellation)}>
+                {busyTicket === pendingCancellation.ticket ? "Cancelling…" : "Cancel order"}
+              </button>
+            </footer>
+          </div>
+        )}
+      </dialog>
     </div>
   );
 }
