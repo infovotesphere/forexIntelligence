@@ -4,5 +4,5 @@ import { PositionsTable } from "@/components/PositionsTable";
 export const instant = false;
 
 export default function Positions() {
-  return <Page title="Open positions" description="Read-only view of broker positions" active="/positions"><PositionsTable /></Page>;
+  return <Page title="Positions & market monitor" description="Track candlesticks, paper trades, and read-only broker positions" active="/positions"><PositionsTable /></Page>;
 }

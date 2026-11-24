@@ -19,14 +19,14 @@ STRATEGIES: dict[str, type[Strategy]] = {
     TrendFollowingStrategy.name: TrendFollowingStrategy,
     BreakoutRetestStrategy.name: BreakoutRetestStrategy,
 }
-TIMEFRAME_MINUTES = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
+TIMEFRAME_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
 
 
 class BacktestRequest(BaseModel):
     symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
-    timeframe: Literal["M5", "M15", "M30", "H1", "H4", "D1"] = "H1"
+    timeframe: Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1"] = "H1"
     strategy: Literal["trend_following", "breakout_retest"] = "trend_following"
-    bars: int = Field(default=260, ge=30, le=500)
+    bars: int = Field(default=260, ge=30, le=2000)
 
 
 @router.post("/run")

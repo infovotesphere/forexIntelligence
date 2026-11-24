@@ -1,6 +1,10 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { useInstrumentSelection } from "@/services/instrumentSelection";
+import { startVisiblePolling } from "@/services/polling";
+import { searchableInstrumentGroups } from "@/services/instruments";
 
 type Signal = {
   signal_id?: string;
@@ -24,7 +28,6 @@ type Signal = {
   data_source?: "simulation" | "mt5";
 };
 
-const symbols = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD"];
 const timeframes = ["M5", "M15", "M30", "H1", "H4", "D1"];
 
 function formatRiskReward(value?: string): string {
@@ -39,7 +42,7 @@ function signalKey(signal: Signal): string {
 
 export function SignalsPanel() {
   const [signals, setSignals] = useState<Signal[]>([]);
-  const [symbol, setSymbol] = useState("EURUSD");
+  const { symbol, setSymbol } = useInstrumentSelection();
   const [timeframe, setTimeframe] = useState("ALL");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,6 +50,8 @@ export function SignalsPanel() {
   const [generationMessage, setGenerationMessage] = useState("");
   const [realtime, setRealtime] = useState<{ enabled: boolean; connected: boolean; interval_seconds: number; last_scan_at: string | null; last_scan_error: string | null; history_count: number } | null>(null);
   const [historyOnly, setHistoryOnly] = useState(false);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   useEffect(() => {
     let active = true;
@@ -56,7 +61,7 @@ export function SignalsPanel() {
         if (!response.ok) throw new Error("Unable to load trading signals");
         const result = await response.json() as { items: Signal[] };
         const realtimeResponse = await fetch("/api/v1/signals/realtime/status", { cache: "no-store" });
-        if (realtimeResponse.ok) setRealtime(await realtimeResponse.json());
+        if (active && realtimeResponse.ok) setRealtime(await realtimeResponse.json());
         if (active) {
           setSignals(result.items.filter((signal) => signal.status !== "REJECTED"));
           setError("");
@@ -68,11 +73,10 @@ export function SignalsPanel() {
       }
     }
 
-    void loadSignals();
-    const timer = window.setInterval(loadSignals, 15000);
+    const stopPolling = startVisiblePolling(loadSignals, 15000);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      stopPolling();
     };
   }, []);
 
@@ -121,6 +125,7 @@ export function SignalsPanel() {
       const unavailableNote = unavailableTimeframes.length > 0
         ? ` MT5 history was unavailable for ${unavailableTimeframes.join(", ")}; those timeframes were skipped without simulation fallback.`
         : "";
+      setPage(1);
       setGenerationMessage(generated.length === 0
         ? `Scan complete: 0 validated setups for ${symbol} across ${scope}.${rejectionNote}${unavailableNote}`
         : `Scan complete: found ${generated.length} validated signal${generated.length === 1 ? "" : "s"} for ${symbol} across ${scope}.${rejectionNote}${unavailableNote}`);
@@ -138,6 +143,11 @@ export function SignalsPanel() {
   const displayedSignals = historyOnly
     ? signals
     : signals.filter((signal) => signal.status === "VALIDATED");
+  const pageCount = Math.max(1, Math.ceil(displayedSignals.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const firstSignal = displayedSignals.length === 0 ? 0 : (currentPage - 1) * pageSize;
+  const lastSignal = Math.min(firstSignal + pageSize, displayedSignals.length);
+  const pageSignals = displayedSignals.slice(firstSignal, lastSignal);
   const sourceLabel = signals.length === 0
     ? "No signal history"
     : hasMt5Signals && hasSimulationSignals
@@ -165,16 +175,16 @@ export function SignalsPanel() {
         <form className="signal-form" onSubmit={generate}>
           <label>
             <span>Instrument</span>
-            <select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
-              {symbols.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <SearchableSelect value={symbol} onChange={setSymbol} groups={searchableInstrumentGroups} ariaLabel="Instrument" searchPlaceholder="Search instruments..." />
           </label>
           <label>
             <span>Timeframe</span>
-            <select value={timeframe} onChange={(event) => setTimeframe(event.target.value)}>
-              <option value="ALL">All timeframes</option>
-              {timeframes.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <SearchableSelect
+              value={timeframe}
+              onChange={setTimeframe}
+              options={[{ value: "ALL", label: "All timeframes" }, ...timeframes.map((item) => ({ value: item, label: item }))]}
+              ariaLabel="Timeframe"
+            />
           </label>
           <button className="primary-button" type="submit" disabled={busy}>
             {busy ? "Scanning..." : timeframe === "ALL" ? "Scan all timeframes" : `Scan ${timeframe}`}
@@ -211,8 +221,8 @@ export function SignalsPanel() {
         <div className="signal-list-heading">
           <div><h2>{historyOnly ? "Signal history" : "Recent active signals"}</h2><p>{validatedCount} active · {expiredCount} expired</p></div>
           <div className="button-row">
-            <button type="button" className={historyOnly ? "secondary-button" : "primary-button"} onClick={() => setHistoryOnly(false)}>Active</button>
-            <button type="button" className={historyOnly ? "primary-button" : "secondary-button"} onClick={() => setHistoryOnly(true)}>History</button>
+            <button type="button" className={historyOnly ? "secondary-button" : "primary-button"} aria-pressed={!historyOnly} onClick={() => { setHistoryOnly(false); setPage(1); }}>Active</button>
+            <button type="button" className={historyOnly ? "primary-button" : "secondary-button"} aria-pressed={historyOnly} onClick={() => { setHistoryOnly(true); setPage(1); }}>History</button>
             <span className="pill">{sourceLabel}</span>
           </div>
         </div>
@@ -227,7 +237,7 @@ export function SignalsPanel() {
                 <tr><th>Market</th><th>Direction</th><th>Entry / stop</th><th>Targets</th><th>R:R · TP3</th><th>Quality</th><th>Status</th><th>Details</th></tr>
               </thead>
               <tbody>
-                {displayedSignals.map((signal, index) => (
+                {pageSignals.map((signal, index) => (
                   <tr key={signal.signal_id ?? `${signal.symbol}-${signal.created_at}-${index}`}>
                     <td><strong>{signal.symbol}</strong><span className="signal-meta">{signal.strategy} · {signal.timeframe} · {signal.data_source === "mt5" || signal.simulated === false ? "MT5" : "SIM"}</span></td>
                     <td><span className={`signal-direction ${signal.direction === "BUY" ? "buy-direction" : signal.direction === "SELL" ? "sell-direction" : ""}`}>{signal.direction ?? "—"}</span></td>
@@ -242,6 +252,36 @@ export function SignalsPanel() {
               </tbody>
             </table>
           </div>
+        )}
+        {!loading && displayedSignals.length > 0 && (
+          <nav className="signal-pagination" aria-label="Signal pages">
+            <p aria-live="polite">Showing <strong>{firstSignal + 1}–{lastSignal}</strong> of <strong>{displayedSignals.length}</strong> {historyOnly ? "historical" : "active"} signals</p>
+            <div className="signal-pagination-controls">
+              <label>
+                <span>Rows</span>
+                <SearchableSelect
+                  value={String(pageSize)}
+                  onChange={(value) => {
+                    const size = Number(value);
+                    if ([10, 20, 50].includes(size)) {
+                      setPageSize(size);
+                      setPage(1);
+                    }
+                  }}
+                  options={[10, 20, 50].map((item) => ({ value: String(item), label: String(item) }))}
+                  ariaLabel="Signals per page"
+                  className="compact"
+                />
+              </label>
+              <button type="button" className="signal-page-button" onClick={() => setPage(currentPage - 1)} disabled={currentPage === 1} aria-label="Previous page">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 4-6 6 6 6" /></svg>
+              </button>
+              <span className="signal-page-indicator">Page {currentPage} of {pageCount}</span>
+              <button type="button" className="signal-page-button" onClick={() => setPage(currentPage + 1)} disabled={currentPage === pageCount} aria-label="Next page">
+                <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m8 4 6 6-6 6" /></svg>
+              </button>
+            </div>
+          </nav>
         )}
       </section>
     </div>

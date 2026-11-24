@@ -35,3 +35,7 @@ Keep the worker running while connecting from the dashboard's **Settings → Con
 If the worker is stopped after claiming the one-time credential handoff, submit the login again after restarting it. Credentials queued in the API are memory-only and are lost when the API restarts. Never expose the MT5 desktop terminal or Windows Remote Desktop publicly.
 
 Codespaces on Linux cannot run the official MT5 package. The simulation adapter remains available for development, but it does not authenticate broker credentials.
+
+## Independent practice account
+
+The practice account uses a separate virtual ledger and does not require connecting a broker account. Positions provides a full-width TradingView Lightweight Charts monitor, overlays open-position entry/current/protection levels, and offers instant virtual Buy/Sell actions at the practice quote. Tap or long-press a practice position to modify stop loss/take profit or close it; select multiple rows to close them together. A circular timeframe selector is available by tapping the chart. An advanced responsive trade dialog supports market, buy-stop and sell-stop orders. Stop loss and take profit are optional; without a stop loss, losses are not capped by the risk limit. Pending stop orders can be reviewed and cancelled from order activity. Practice orders never reach MT5; broker positions remain read-only.

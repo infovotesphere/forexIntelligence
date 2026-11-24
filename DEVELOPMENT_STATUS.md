@@ -146,14 +146,18 @@ Status: implemented and validated.
 
 ## Phase 9 — Read-only position monitoring
 
-Status: implemented and validated.
+Status: MT5 remains read-only; simulation positions support practice trading.
 
 - Windows MT5 worker includes open broker positions in its authenticated heartbeat
 - API validates and serves position snapshots, including side, volume, prices, floating P/L and protective levels
 - Positions page refreshes periodically and labels broker data as read-only
-- Simulation account correctly returns an empty position list; disconnected accounts do not display stale positions
-- No position modification or close actions are exposed
-- Verification: 34 backend tests pass; frontend production build and focused lint pass
+- An independent virtual practice account can be used from Positions and Orders without switching or connecting a broker account
+- Practice positions and deals are separate from broker positions/history; MT5 remains read-only
+- Positions overlays open entry/current/stop/target levels on the full-width chart, supports radial timeframe selection, and provides tap/long-press practice-position actions with modify and bulk close
+- The quick practice trade panel is compact; broker positions remain read-only while virtual practice positions can be modified or closed
+- MT5 positions remain read-only; practice stop loss and take profit are optional and no practice order reaches a broker
+- Simulation balances, open positions and closed practice deals are persisted in runtime state
+- Verification: focused broker and simulation-adapter tests pass
 
 ## Phase 10 — Technical market analytics
 
@@ -176,7 +180,7 @@ Status: read-only worker handoff and dashboard view implemented.
 - PostgreSQL persists deal tickets idempotently per account, server and environment; repeated worker heartbeats do not duplicate records
 - History page shows deal/order IDs, side, volume, price and P/L breakdown
 - Raw MT5 deals are explicitly distinguished from strategy-attributed or reconciled application trades
-- Simulation history remains empty until simulated executions are persisted
+- Simulation history includes closed practice executions and clearly distinguishes them from MT5 deals
 - Verification: 36 backend tests pass; frontend production build and focused lint pass
 
 ## Signal price precision
@@ -187,18 +191,23 @@ Status: read-only worker handoff and dashboard view implemented.
 
 ## Phase 12 — Strategy backtesting
 
-Status: interactive candle replay implemented for the simulation account and connected MT5 history.
+Status: interactive candle replay supports M1 through D1 for simulation, Yahoo Finance and connected MT5 history.
 
 - Backtest API replays selected strategies over completed candles and returns OHLCV data plus trade outcomes and R-based metrics
 - Connected MT5 accounts use read-only broker candles and broker tick-size metadata; missing or stale history returns an error instead of falling back to generated data
-- Interactive candlestick chart supports play/pause, stepping, speed selection and a replay position slider; future metrics remain hidden until playback completes
+- Interactive candlestick chart supports play/pause, stepping, speed selection, a replay position slider, zoom and pan; future metrics remain hidden until playback completes
+- Chart replay can be expanded into a responsive fullscreen view and exited with Escape
+- Backtesting is for historical analysis; new practice trades are opened from Positions or Orders, and MT5 remains read-only
+- The touch-friendly practice ticket opens in a dialog and supports market, buy-stop and sell-stop orders, optional stop loss/take profit, and pending-order cancellation
+- Yahoo Finance M1 history is limited to the latest seven days; MT5 M1 history depends on Windows-worker candle availability
 - Completed replays show average R per trade and a realized-equity curve with cumulative R and drawdown after each closed trade
-- The Windows worker sends up to 501 bars per symbol/timeframe so a replay can use up to 500 completed bars while excluding the forming bar
+- The Windows worker sends up to 2,001 bars per symbol/timeframe so a replay can use up to 2,000 completed bars while excluding the forming bar
+- Strategy indicators are precomputed once for the replay history to keep larger backtests responsive
 - Entry is modeled at the signal candle close; TP3 or stop loss exits are checked on following candles
 - Ambiguous candles where both exit levels are touched conservatively assume stop loss first
 - Spread, slippage, commissions, partial exits and portfolio risk are explicitly not modeled
-- No broker or paper orders are submitted
-- Verification: 4 backtest engine tests and 5 backtest API tests pass; focused component lint and TypeScript checks pass
+- Backtesting does not submit orders; practice trades are separate and simulation-only
+- Verification: 25 focused backtest-engine, analysis, API and practice-order tests pass; frontend lint and production build pass
 
 ## Multi-timeframe technical analysis
 
@@ -282,7 +291,7 @@ Status: implemented for open positions and completed broker deals.
 - Windows worker sends up to 501 OHLCV bars for each monitored symbol and supported timeframe, along with broker tick-size metadata
 - Candle snapshots are refreshed once per minute and validated for OHLC consistency and chronological ordering
 - Analysis and signal generation use broker candles while MT5 is selected; a disconnected or incomplete worker feed returns an explicit error instead of silently analyzing simulation data
-- Backtesting uses up to 500 completed MT5 candles when the broker is selected; simulation candles require an explicitly connected simulation account
+- Backtesting uses up to 2,000 completed MT5 candles when the broker is selected; simulation candles require an explicitly connected simulation account
 - Verification: full backend suite, frontend production build and focused lint passed
 - Real broker history delivery still requires validating the updated worker on Windows with an installed MT5 terminal
 

@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from redis import Redis
 
+from app.core.broker import simulation_adapter
 from app.core.config import get_settings
 from app.core.runtime import RuntimeState, runtime_store
 
@@ -26,6 +27,7 @@ def save_runtime_state() -> None:
             "balance": str(state.balance) if state.balance is not None else "",
             "equity": str(state.equity) if state.equity is not None else "",
             "message": state.message,
+            "simulation_book": simulation_adapter.export_state(),
         }), ex=60 * 60 * 24)
     except Exception:
         return
@@ -48,6 +50,7 @@ def restore_runtime_state() -> None:
     broker = str(payload.get("broker") or "none")
     if broker not in {"none", "simulation", "mt5"}:
         return
+    simulation_adapter.restore_state(payload.get("simulation_book", {}))
 
     balance = Decimal(payload["balance"]) if payload.get("balance") else None
     equity = Decimal(payload["equity"]) if payload.get("equity") else None

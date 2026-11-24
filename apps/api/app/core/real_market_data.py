@@ -15,9 +15,41 @@ YAHOO_SYMBOLS = {
     "USDCAD": "USDCAD=X",
     "AUDUSD": "AUDUSD=X",
     "NZDUSD": "NZDUSD=X",
+    "EURGBP": "EURGBP=X",
+    "EURJPY": "EURJPY=X",
+    "EURAUD": "EURAUD=X",
+    "EURCAD": "EURCAD=X",
+    "EURCHF": "EURCHF=X",
+    "EURNZD": "EURNZD=X",
+    "GBPJPY": "GBPJPY=X",
+    "GBPAUD": "GBPAUD=X",
+    "GBPCAD": "GBPCAD=X",
+    "GBPCHF": "GBPCHF=X",
+    "GBPNZD": "GBPNZD=X",
+    "AUDJPY": "AUDJPY=X",
+    "AUDCAD": "AUDCAD=X",
+    "AUDNZD": "AUDNZD=X",
+    "AUDCHF": "AUDCHF=X",
+    "CADJPY": "CADJPY=X",
+    "CADCHF": "CADCHF=X",
+    "CHFJPY": "CHFJPY=X",
+    "NZDJPY": "NZDJPY=X",
+    "NZDCAD": "NZDCAD=X",
+    "NZDCHF": "NZDCHF=X",
     "XAUUSD": "GC=F",
+    "BTCUSD": "BTC-USD",
+    "ETHUSD": "ETH-USD",
+    "BNBUSD": "BNB-USD",
+    "SOLUSD": "SOL-USD",
+    "XRPUSD": "XRP-USD",
+    "ADAUSD": "ADA-USD",
+    "DOGEUSD": "DOGE-USD",
+    "LTCUSD": "LTC-USD",
+    "BCHUSD": "BCH-USD",
+    "AVAXUSD": "AVAX-USD",
 }
 YAHOO_INTERVALS = {
+    "M1": "1m",
     "M5": "5m",
     "M15": "15m",
     "M30": "30m",
@@ -44,7 +76,7 @@ def get_real_market_candles(symbol: str, timeframe: str) -> list[Candle]:
         if cached and datetime.now(UTC) - cached[0] < timedelta(minutes=5):
             return list(cached[1])
 
-    range_value = "60d" if timeframe in {"M5", "M15", "M30", "H1", "H4"} else "2y"
+    range_value = "7d" if timeframe == "M1" else "60d" if timeframe in {"M5", "M15", "M30", "H1", "H4"} else "2y"
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
     try:
         response = httpx.get(

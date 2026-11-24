@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { startVisiblePolling } from "@/services/polling";
 
 type BrokerDeal = {
   time: string;
@@ -329,11 +330,10 @@ export function DashboardPerformance() {
         if (active) setError(cause instanceof Error ? cause.message : "Trading performance is unavailable");
       }
     }
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 30000);
+    const stopPolling = startVisiblePolling(refresh, 30000);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      stopPolling();
     };
   }, []);
 

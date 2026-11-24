@@ -38,6 +38,21 @@ def test_position_size_rounds_down_to_volume_step_and_stays_within_risk():
     assert result["simulated"] is True
 
 
+def test_crypto_position_size_uses_coin_contract_and_step():
+    client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
+    response = client.post(
+        "/api/v1/risk/position-size",
+        json={"symbol": "BTCUSD", "entry": "95000", "stop_loss": "94900"},
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["volume"] == "1"
+    assert Decimal(result["estimated_risk"]) == Decimal("100")
+    assert result["risk_within_budget"] is True
+    assert result["simulated"] is True
+
+
 def test_position_size_never_rounds_up_to_broker_minimum():
     client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
     response = client.post(

@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: forex
       POSTGRES_USER: forex
@@ -17,6 +18,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -27,6 +29,7 @@ services:
 
   api:
     image: python:3.11-slim
+    restart: unless-stopped
     working_dir: /app
     volumes:
       - ./apps/api:/app
@@ -61,6 +64,7 @@ services:
 
   web:
     image: node:22-alpine
+    restart: unless-stopped
     working_dir: /app
     volumes:
       - ./apps/web:/app

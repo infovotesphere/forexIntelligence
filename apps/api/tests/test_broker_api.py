@@ -2,9 +2,13 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
+from shared.contracts.broker import Tick
+from app.api.v1 import broker as broker_api
 from app.core.auth import AUTH_COOKIE_NAME
+from app.core.broker import simulation_adapter
 from app.main import app
 from app.core.security import create_access_token
+from app.core.runtime import RuntimeState, runtime_store
 
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
@@ -30,22 +34,308 @@ def test_account_and_market_endpoints():
     assert markets.status_code == 200
     instruments = markets.json()
     symbols = {instrument["symbol"] for instrument in instruments}
-    assert {"EURUSD", "GBPUSD", "XAUUSD"} <= symbols
+    assert {"EURUSD", "GBPUSD", "EURGBP", "XAUUSD", "BTCUSD", "ETHUSD"} <= symbols
     eurusd = next(instrument for instrument in instruments if instrument["symbol"] == "EURUSD")
     assert Decimal(eurusd["ask"]) > Decimal(eurusd["bid"])
     assert Decimal(eurusd["spread"]) == Decimal(eurusd["ask"]) - Decimal(eurusd["bid"])
     assert eurusd["simulated"] is True
 
 
-def test_simulation_positions_endpoint_is_read_only_and_empty():
-    client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
-    response = client.get("/api/v1/positions")
+def test_market_candle_endpoint_returns_simulated_preview_without_broker(monkeypatch):
+    previous_runtime = runtime_store.state
+    monkeypatch.setattr(runtime_store, "state", RuntimeState())
 
-    assert response.status_code == 200
-    assert response.json()["connected"] is True
-    assert response.json()["items"] == []
-    assert response.json()["simulated"] is True
-    assert response.json()["trading_mode"] == "paper_only"
+    try:
+        response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["symbol"] == "EURUSD"
+        assert body["timeframe"] == "M5"
+        assert body["data_source"] == "simulation"
+        assert body["simulated"] is True
+        assert len(body["candles"]) == 30
+        assert set(body["candles"][0]) == {"time", "open", "high", "low", "close", "volume"}
+    finally:
+        runtime_store.state = previous_runtime
+
+
+def test_market_candle_endpoint_does_not_fallback_when_mt5_candles_are_missing(monkeypatch):
+    previous_runtime = runtime_store.state
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(
+            broker="mt5",
+            mt5_connected=True,
+            worker_last_seen=datetime.now(UTC),
+        ),
+    )
+    monkeypatch.setattr(broker_api, "get_mt5_candles", lambda _symbol, _timeframe: None)
+
+    try:
+        response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5")
+
+        assert response.status_code == 503
+        assert "No fresh MT5" in response.json()["detail"]
+    finally:
+        runtime_store.state = previous_runtime
+
+
+def test_simulation_positions_endpoint_marks_practice_capability(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
+    client.post("/api/v1/accounts/connect", json={"broker": "simulation"})
+    try:
+        response = client.get("/api/v1/positions")
+
+        assert response.status_code == 200
+        assert response.json()["connected"] is True
+        assert response.json()["items"] == []
+        assert response.json()["simulated"] is True
+        assert response.json()["trading_mode"] == "paper_only"
+        assert response.json()["can_trade_simulation"] is True
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_simulation_practice_trade_can_open_and_close_without_broker_orders(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    runtime_store.connect_demo()
+    monkeypatch.setattr(
+        simulation_adapter,
+        "get_tick",
+        lambda symbol: Tick(
+            symbol=symbol,
+            bid=Decimal("1.10000"),
+            ask=Decimal("1.10010"),
+            time=datetime.now(UTC),
+        ),
+    )
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
+
+    try:
+        too_risky = client.post(
+            "/api/v1/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "volume": "2",
+                "stop_loss": "1.09910",
+            },
+        )
+        assert too_risky.status_code == 422
+
+        opened = client.post(
+            "/api/v1/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "volume": "0.01",
+                "stop_loss": "1.09910",
+                "take_profit": "1.10210",
+                "idempotency_key": "practice-order-test",
+            },
+        )
+
+        assert opened.status_code == 200
+        position = opened.json()["position"]
+        assert position["simulated"] is True
+        assert position["direction"] == "BUY"
+        assert Decimal(position["price_open"]) == Decimal("1.10010")
+
+        repeated = client.post(
+            "/api/v1/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "volume": "0.01",
+                "stop_loss": "1.09910",
+                "take_profit": "1.10210",
+                "idempotency_key": "practice-order-test",
+            },
+        )
+        assert repeated.status_code == 200
+
+        positions = client.get("/api/v1/positions").json()
+        assert positions["can_trade_simulation"] is True
+        assert positions["total"] == 1
+
+        closed = client.post(f"/api/v1/positions/{position['ticket']}/close")
+        assert closed.status_code == 200
+        assert closed.json()["simulated"] is True
+        assert closed.json()["deal"]["close_reason"] == "MANUAL"
+
+        history = client.get("/api/v1/history").json()
+        assert history["simulated"] is True
+        assert history["total"] == 1
+        assert history["items"][0]["order"] == position["ticket"]
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_practice_account_works_without_broker_connection(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(),
+    )
+    monkeypatch.setattr(
+        simulation_adapter,
+        "get_tick",
+        lambda symbol: Tick(
+            symbol=symbol,
+            bid=Decimal("1.10000"),
+            ask=Decimal("1.10010"),
+            time=datetime.now(UTC),
+        ),
+    )
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
+
+    try:
+        status = client.get("/api/v1/practice/status")
+        markets = client.get("/api/v1/practice/markets")
+        opened = client.post(
+            "/api/v1/practice/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "order_type": "MARKET",
+                "volume": "0.01",
+                "stop_price": None,
+                "stop_loss": None,
+                "take_profit": None,
+            },
+        )
+        positions = client.get("/api/v1/practice/positions")
+
+        assert status.status_code == 200
+        assert status.json()["connected"] is True
+        assert len(markets.json()) > 0
+        assert opened.status_code == 200
+        assert opened.json()["simulated"] is True
+        assert simulation_adapter.export_state()["positions"], simulation_adapter.export_state()
+        assert opened.json()["position"] is not None, opened.text
+        assert positions.status_code == 200
+        assert positions.json()["total"] == 1
+        assert positions.json()["items"][0]["stop_loss"] == "0"
+        assert runtime_store.state.broker == "none"
+
+        closed = client.post(f"/api/v1/practice/positions/{opened.json()['position']['ticket']}/close")
+        assert closed.status_code == 200
+        assert client.get("/api/v1/practice/history").json()["total"] == 1
+
+        missing_stop_price = client.post(
+            "/api/v1/practice/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "order_type": "BUY_STOP",
+                "volume": "0.01",
+            },
+        )
+        wrong_stop_direction = client.post(
+            "/api/v1/practice/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "order_type": "SELL_STOP",
+                "volume": "0.01",
+                "stop_price": "1.09900",
+            },
+        )
+        assert missing_stop_price.status_code == 422
+        assert wrong_stop_direction.status_code == 422
+
+        pending = client.post(
+            "/api/v1/practice/orders",
+            json={
+                "symbol": "EURUSD",
+                "direction": "BUY",
+                "order_type": "BUY_STOP",
+                "volume": "0.01",
+                "stop_price": "1.10100",
+            },
+        )
+        assert pending.status_code == 200
+        assert pending.json()["pending_order"]["order_type"] == "BUY_STOP"
+        assert client.get("/api/v1/practice/positions").json()["pending_total"] == 1
+        cancelled = client.delete(f"/api/v1/practice/orders/{pending.json()['pending_order']['ticket']}")
+        assert cancelled.status_code == 200
+        assert client.get("/api/v1/practice/positions").json()["pending_total"] == 0
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_practice_position_can_be_modified_and_bulk_closed(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(runtime_store, "state", RuntimeState())
+    monkeypatch.setattr(
+        simulation_adapter,
+        "get_tick",
+        lambda symbol: Tick(
+            symbol=symbol,
+            bid=Decimal("1.10000"),
+            ask=Decimal("1.10010"),
+            time=datetime.now(UTC),
+        ),
+    )
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
+
+    try:
+        opened_positions = []
+        for direction in ("BUY", "SELL"):
+            opened = client.post(
+                "/api/v1/practice/orders",
+                json={"symbol": "EURUSD", "direction": direction, "volume": "0.01"},
+            )
+            assert opened.status_code == 200
+            opened_positions.append(opened.json()["position"])
+
+        ticket = opened_positions[0]["ticket"]
+        modified = client.patch(
+            f"/api/v1/practice/positions/{ticket}",
+            json={"stop_loss": "1.09900", "take_profit": "1.10100"},
+        )
+        assert modified.status_code == 200
+        assert modified.json()["position"]["stop_loss"] == "1.09900"
+        assert modified.json()["position"]["take_profit"] == "1.10100"
+
+        invalid = client.patch(
+            f"/api/v1/practice/positions/{ticket}",
+            json={"stop_loss": "1.10000", "take_profit": "1.10100"},
+        )
+        assert invalid.status_code == 422
+
+        partial = client.post(
+            "/api/v1/practice/positions/close-bulk",
+            json={"tickets": [opened_positions[0]["ticket"], "missing-ticket"]},
+        )
+        assert partial.status_code == 404
+        assert client.get("/api/v1/practice/positions").json()["total"] == 2
+
+        closed = client.post(
+            "/api/v1/practice/positions/close-bulk",
+            json={"tickets": [position["ticket"] for position in opened_positions]},
+        )
+        assert closed.status_code == 200
+        assert closed.json()["closed"] == 2
+        assert client.get("/api/v1/practice/positions").json()["total"] == 0
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
 
 
 def test_simulation_history_endpoint_is_empty_and_marked_simulated(sqlite_database):

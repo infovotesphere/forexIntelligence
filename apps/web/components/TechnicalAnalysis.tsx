@@ -1,6 +1,9 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { useInstrumentSelection } from "@/services/instrumentSelection";
+import { searchableInstrumentGroups } from "@/services/instruments";
 
 type StrategySignal = {
   strategy: string;
@@ -34,7 +37,6 @@ type Analysis = {
   status?: string;
 };
 
-const symbols = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD"];
 const timeframes = ["M5", "M15", "M30", "H1", "H4", "D1"];
 const indicatorLabels: Record<string, string> = {
   ema20: "EMA 20",
@@ -57,7 +59,7 @@ function formatIndicator(name: string, value: number) {
 }
 
 export function TechnicalAnalysis() {
-  const [symbol, setSymbol] = useState("EURUSD");
+  const { symbol, setSymbol } = useInstrumentSelection();
   const [timeframe, setTimeframe] = useState("H1");
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [busy, setBusy] = useState(false);
@@ -105,15 +107,11 @@ export function TechnicalAnalysis() {
         <form className="signal-form" onSubmit={runAnalysis}>
           <label>
             <span>Instrument</span>
-            <select value={symbol} onChange={(event) => setSymbol(event.target.value)}>
-              {symbols.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <SearchableSelect value={symbol} onChange={setSymbol} groups={searchableInstrumentGroups} ariaLabel="Instrument" searchPlaceholder="Search instruments..." />
           </label>
           <label>
             <span>Timeframe</span>
-            <select value={timeframe} onChange={(event) => setTimeframe(event.target.value)}>
-              {timeframes.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
+            <SearchableSelect value={timeframe} onChange={setTimeframe} options={timeframes.map((item) => ({ value: item, label: item }))} ariaLabel="Timeframe" />
           </label>
           <button className="primary-button" type="submit" disabled={busy}>
             {busy ? "Analyzing..." : "Run analysis"}

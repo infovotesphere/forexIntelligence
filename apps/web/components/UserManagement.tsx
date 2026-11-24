@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, type MouseEvent, useEffect, useRef, useState } from "react";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 type ManagedUser = {
   id: string;
@@ -423,10 +424,19 @@ function UserFormFields({ draft, setDraft, creating = false }: {
       </label>
       <label>
         Access role
-        <select value={draft.role} onChange={(event) => setDraft((current) => ({ ...current, role: event.target.value as UserDraft["role"] }))}>
-          <option value="viewer">Viewer</option>
-          <option value="administrator">Administrator</option>
-        </select>
+        <SearchableSelect
+          value={draft.role}
+          onChange={(value) => {
+            if (value === "viewer" || value === "administrator") {
+              setDraft((current) => ({ ...current, role: value }));
+            }
+          }}
+          options={[
+            { value: "viewer", label: "Viewer" },
+            { value: "administrator", label: "Administrator" },
+          ]}
+          ariaLabel="Access role"
+        />
       </label>
     </div>
   );

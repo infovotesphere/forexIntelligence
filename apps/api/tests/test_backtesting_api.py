@@ -39,12 +39,46 @@ def test_backtesting_endpoint_returns_simulation_model_and_summary():
         runtime_store.state = previous_state
 
 
+def test_backtesting_accepts_one_minute_bars(monkeypatch):
+    from app.api.v1 import backtesting
+
+    previous_state = runtime_store.state
+    runtime_store.connect_demo()
+    now = datetime.now(UTC).replace(second=0, microsecond=0)
+    candles = [
+        Candle(
+            symbol="EURUSD",
+            timeframe="M1",
+            time=now - timedelta(minutes=31 - index),
+            open=Decimal("1.10000"),
+            high=Decimal("1.10100"),
+            low=Decimal("1.09900"),
+            close=Decimal("1.10050"),
+            volume=Decimal("100"),
+        )
+        for index in range(31)
+    ]
+    monkeypatch.setattr(backtesting, "get_real_market_candles", lambda _symbol, _timeframe: candles)
+
+    try:
+        response = client.post(
+            "/api/v1/backtesting/run",
+            json={"symbol": "EURUSD", "timeframe": "M1", "strategy": "trend_following", "bars": 30},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["timeframe"] == "M1"
+        assert response.json()["bars_tested"] == 30
+    finally:
+        runtime_store.state = previous_state
+
+
 def test_backtesting_rejects_unknown_instrument_and_invalid_window():
     previous_state = runtime_store.state
     runtime_store.connect_demo()
     try:
         unknown = client.post("/api/v1/backtesting/run", json={"symbol": "UNKNOWN"})
-        too_many = client.post("/api/v1/backtesting/run", json={"symbol": "EURUSD", "bars": 501})
+        too_many = client.post("/api/v1/backtesting/run", json={"symbol": "EURUSD", "bars": 2001})
 
         assert unknown.status_code == 404
         assert too_many.status_code == 422
@@ -67,7 +101,7 @@ def test_backtesting_uses_connected_mt5_candles_and_excludes_forming_bar(monkeyp
             close=Decimal("1.10050"),
             volume=Decimal("100"),
         )
-        for index in range(501)
+        for index in range(2001)
     ]
     monkeypatch.setattr(
         runtime_store,
@@ -86,7 +120,7 @@ def test_backtesting_uses_connected_mt5_candles_and_excludes_forming_bar(monkeyp
 
     response = client.post(
         "/api/v1/backtesting/run",
-        json={"symbol": "EURUSD", "timeframe": "H1", "strategy": "trend_following", "bars": 500},
+        json={"symbol": "EURUSD", "timeframe": "H1", "strategy": "trend_following", "bars": 2000},
     )
 
     assert response.status_code == 200
@@ -94,8 +128,8 @@ def test_backtesting_uses_connected_mt5_candles_and_excludes_forming_bar(monkeyp
     assert result["simulated"] is False
     assert result["data_source"] == "mt5"
     assert result["symbol"] == "EURUSDm"
-    assert result["bars_tested"] == 500
-    assert len(result["candles"]) == 500
+    assert result["bars_tested"] == 2000
+    assert len(result["candles"]) == 2000
     assert result["candles"][-1]["time"] == candles[-2].time.isoformat()
     assert "read-only MT5 broker history" in result["execution_model"]
 

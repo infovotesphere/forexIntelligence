@@ -4,6 +4,9 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CandlestickReplay, type ReplayCandle, type ReplayMarker } from "@/components/CandlestickReplay";
 import { BacktestEquityCurve, type BacktestEquityPoint } from "@/components/BacktestEquityCurve";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { useInstrumentSelection } from "@/services/instrumentSelection";
+import { searchableInstrumentGroups } from "@/services/instruments";
 
 type BacktestTrade = {
   signal_time: string;
@@ -45,8 +48,7 @@ type BacktestResult = {
   trades: BacktestTrade[];
 };
 
-const symbols = ["EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD"];
-const timeframes = ["M5", "M15", "M30", "H1", "H4", "D1"];
+const timeframes = ["M1", "M5", "M15", "M30", "H1", "H4", "D1"];
 const strategies = [
   { value: "trend_following", label: "Trend following" },
   { value: "breakout_retest", label: "Breakout / retest" },
@@ -67,7 +69,7 @@ function formatMultiple(value: string | null): string {
 
 export function BacktestRunner() {
   const searchParams = useSearchParams();
-  const [symbol, setSymbol] = useState("EURUSD");
+  const { symbol, setSymbol } = useInstrumentSelection();
   const [timeframe, setTimeframe] = useState("H1");
   const [bars, setBars] = useState(500);
   const [strategy, setStrategy] = useState(() => {
@@ -149,14 +151,33 @@ export function BacktestRunner() {
       <section className="card panel backtest-controls">
         <div><h2>Configure replay</h2><p>Choose the market, timeframe, strategy, and history length.</p></div>
         <form className="signal-form" onSubmit={run}>
-          <label><span>Instrument</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{symbols.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label><span>Timeframe</span><select value={timeframe} onChange={(event) => setTimeframe(event.target.value)}>{timeframes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label><span>Strategy</span><select value={strategy} onChange={(event) => setStrategy(event.target.value)}>{strategies.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select></label>
-          <label><span>History bars</span><select value={bars} onChange={(event) => setBars(Number(event.target.value))}>{[100, 260, 500].map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>
+            <span>Instrument</span>
+            <SearchableSelect value={symbol} onChange={setSymbol} groups={searchableInstrumentGroups} ariaLabel="Instrument" searchPlaceholder="Search instruments..." />
+          </label>
+          <label><span>Timeframe</span><SearchableSelect value={timeframe} onChange={setTimeframe} options={timeframes.map((item) => ({ value: item, label: item }))} ariaLabel="Timeframe" /></label>
+          <label><span>Strategy</span><SearchableSelect value={strategy} onChange={setStrategy} options={strategies.map((item) => ({ value: item.value, label: item.label }))} ariaLabel="Strategy" /></label>
+          <label><span>History bars</span><SearchableSelect value={String(bars)} onChange={(value) => setBars(Number(value))} options={[100, 260, 500, 1000, 2000].map((item) => ({ value: String(item), label: item.toLocaleString() }))} ariaLabel="History bars" /></label>
           <button className="primary-button" type="submit" disabled={busy}>{busy ? "Loading candles..." : "Load backtest"}</button>
         </form>
+        {timeframe === "M1" && <p className="backtest-timeframe-note">One-minute external history is limited to the latest 7 days. MT5 replay requires recent M1 candles from the Windows worker.</p>}
         {error && <p className="error-text" role="alert">{error}</p>}
       </section>
+
+      {!result && !busy && !error && (
+        <section className="card backtest-intro">
+          <div className="backtest-intro-copy">
+            <span>REPLAY LAB</span>
+            <h2>Study a strategy against market history.</h2>
+            <p>Replay completed candles, inspect every decision point, then review the full-run metrics after the replay finishes.</p>
+          </div>
+          <div className="backtest-intro-steps">
+            <article><span>01</span><strong>Choose a setup</strong><p>Select an instrument, timeframe, and strategy.</p></article>
+            <article><span>02</span><strong>Watch the replay</strong><p>Advance, pause, or scrub through historical candles.</p></article>
+            <article><span>03</span><strong>Review outcomes</strong><p>Compare risk-adjusted results and trade assumptions.</p></article>
+          </div>
+        </section>
+      )}
 
       {result && (
         <>
@@ -182,7 +203,7 @@ export function BacktestRunner() {
                 {replayComplete ? "Replay from start" : isPlaying ? "Pause" : "Play"}
               </button>
               <button type="button" className="secondary-button" disabled={visibleCount >= result.candles.length} onClick={() => { setIsPlaying(false); setVisibleCount((current) => Math.min(result.candles.length, current + 1)); }}>Step forward</button>
-              <label className="replay-speed"><span>Speed</span><select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>{[1, 2, 5, 10, 20].map((item) => <option key={item} value={item}>{item}×</option>)}</select></label>
+              <label className="replay-speed"><span>Speed</span><SearchableSelect value={String(speed)} onChange={(value) => setSpeed(Number(value))} options={[1, 2, 5, 10, 20].map((item) => ({ value: String(item), label: `${item}×` }))} ariaLabel="Replay speed" /></label>
             </div>
             <input
               className="replay-slider"

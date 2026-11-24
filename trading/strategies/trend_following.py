@@ -2,6 +2,7 @@ from collections.abc import Mapping, Sequence
 
 from trading.analysis.indicators import calculate_indicators
 from trading.analysis.market_structure import market_structure
+from shared.contracts.analysis import IndicatorSet
 from trading.strategies.base import Strategy, StrategySignal
 
 
@@ -11,7 +12,8 @@ class TrendFollowingStrategy(Strategy):
     def evaluate(self, symbol: str, timeframe: str, candles: Sequence, context: Mapping | None = None) -> StrategySignal | None:
         if len(candles) < 200:
             return None
-        indicators = calculate_indicators(candles)
+        cached_indicators = context.get("indicators") if context else None
+        indicators = cached_indicators if isinstance(cached_indicators, IndicatorSet) else calculate_indicators(candles)
         structure = market_structure(candles)
         close = float(candles[-1].close)
         atr = indicators.atr14

@@ -1,8 +1,15 @@
 "use client";
 
 import { type FormEvent, useEffect, useState } from "react";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { useInstrumentSelection } from "@/services/instrumentSelection";
 
-type Market = { symbol: string };
+type Market = { symbol: string; base_symbol?: string; description?: string };
+type AccountStatus = {
+  connected: boolean;
+  broker: string;
+  account?: { equity?: string | null } | null;
+};
 type RiskPolicy = {
   max_risk_per_trade_percent: string;
   max_daily_loss_percent: string;
@@ -29,8 +36,9 @@ type Calculation = {
 export function RiskCalculator() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [connected, setConnected] = useState(false);
+  const [broker, setBroker] = useState("");
   const [equity, setEquity] = useState<string | null>(null);
-  const [symbol, setSymbol] = useState("EURUSD");
+  const { symbol, setSymbol } = useInstrumentSelection();
   const [entry, setEntry] = useState("");
   const [stopLoss, setStopLoss] = useState("");
   const [riskPercent, setRiskPercent] = useState("1");
@@ -48,14 +56,14 @@ export function RiskCalculator() {
           fetch("/api/v1/risk/policy"),
         ]);
         if (!statusResponse.ok || !marketsResponse.ok || !policyResponse.ok) throw new Error("Unable to load account, market and risk data");
-        const status = await statusResponse.json();
+        const status = await statusResponse.json() as AccountStatus;
         const marketData = await marketsResponse.json() as Market[];
         const policyData = await policyResponse.json() as RiskPolicy;
         setConnected(status.connected);
+        setBroker(status.broker);
         setEquity(status.account?.equity ?? null);
         setMarkets(marketData);
         setPolicy(policyData);
-        if (marketData.length) setSymbol(marketData[0].symbol);
       } catch (cause) {
         setError(cause instanceof Error ? cause.message : "Unable to load risk calculator");
       } finally {
@@ -86,57 +94,91 @@ export function RiskCalculator() {
     }
   }
 
+  const canCalculate = connected && broker === "simulation";
+
   return (
     <div className="risk-layout">
       <section className="card panel risk-panel">
-        <h2>Position size calculator</h2>
-        <p className="risk-intro">Size from account equity and stop distance. Risk is limited to 1% and volume is rounded down to the broker step.</p>
-        <div className="risk-account">
-          <span>Account equity</span>
-          <strong>{equity ? `$${equity}` : "Unavailable"}</strong>
-          <span className={connected ? "risk-connected" : "risk-disconnected"}>
-            {connected ? "Broker connected" : "Connect an account in Settings"}
+        <div className="risk-section-heading">
+          <div>
+            <span className="risk-eyebrow">POSITION SIZING</span>
+            <h2>Calculate a position</h2>
+            <p className="risk-intro">Volume is based on account equity and stop distance, capped at 1% risk and rounded down to the broker step.</p>
+          </div>
+        </div>
+        <div className={`risk-account ${connected ? "is-connected" : "is-disconnected"}`}>
+          <div className="risk-account-main">
+            <span>ACCOUNT EQUITY</span>
+            <strong>{equity ? `$${equity}` : "Unavailable"}</strong>
+          </div>
+          <span className="risk-account-status">
+            <i className={`status-dot ${connected ? "live" : ""}`} aria-hidden="true" />
+            {connected ? broker === "simulation" ? "Simulation connected" : "MT5 connected" : "Connect an account in Settings"}
           </span>
         </div>
         <form className="risk-form" onSubmit={submit}>
-          <label>
+          <label className="risk-field-wide">
             <span>Instrument</span>
-            <select required value={symbol} onChange={(event) => setSymbol(event.target.value)} disabled={!markets.length}>
-              {markets.map((market) => <option key={market.symbol} value={market.symbol}>{market.symbol}</option>)}
-            </select>
+            <SearchableSelect
+              value={symbol}
+              onChange={setSymbol}
+              options={markets.map((market) => ({ value: market.base_symbol ?? market.symbol, label: market.description ? `${market.base_symbol ?? market.symbol} · ${market.description}` : market.base_symbol ?? market.symbol }))}
+              searchPlaceholder="Search instruments..."
+              ariaLabel="Instrument"
+              disabled={!markets.length}
+            />
           </label>
-          <label>
-            <span>Entry price</span>
-            <input required type="number" step="any" min="0" value={entry} onChange={(event) => setEntry(event.target.value)} placeholder="e.g. 1.08500" />
-          </label>
-          <label>
-            <span>Stop-loss price</span>
-            <input required type="number" step="any" min="0" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} placeholder="e.g. 1.08300" />
-          </label>
-          <label>
-            <span>Risk per trade</span>
+          <div className="risk-price-grid">
+            <label>
+              <span>Entry price</span>
+              <input required type="number" step="any" min="0" value={entry} onChange={(event) => setEntry(event.target.value)} placeholder="e.g. 1.08500" />
+            </label>
+            <label>
+              <span>Protective stop</span>
+              <input required type="number" step="any" min="0" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} placeholder="e.g. 1.08300" />
+            </label>
+          </div>
+          <label className="risk-field-wide">
+            <span>Risk per trade <small>Maximum 1%</small></span>
             <input required type="number" step="0.1" min="0.1" max="1" value={riskPercent} onChange={(event) => setRiskPercent(event.target.value)} />
           </label>
-          <button className="primary-button" type="submit" disabled={busy || !connected || !markets.length}>
-            {busy ? "Loading..." : "Calculate safe volume"}
+          <button className="primary-button risk-submit" type="submit" disabled={busy || !canCalculate || !markets.length}>
+            {busy ? "Loading..." : "Calculate position size"}
           </button>
         </form>
+        {connected && broker !== "simulation" && <p className="risk-capability-note">Position sizing is currently available only for simulation accounts. MT5 sizing is not supported by this calculator yet.</p>}
         {error && <p className="error-text" role="alert">{error}</p>}
       </section>
 
       <section className="card panel risk-result" aria-live="polite">
-        <h2>Calculation</h2>
+        <div className="risk-section-heading">
+          <div>
+            <span className="risk-eyebrow">ESTIMATE</span>
+            <h2>Position size</h2>
+          </div>
+          {calculation && <span className={`risk-result-badge ${calculation.risk_within_budget ? "within-limit" : "over-limit"}`}>{calculation.risk_within_budget ? "Within limit" : "Over limit"}</span>}
+        </div>
         {!calculation ? (
-          <div className="risk-placeholder">Enter an entry and protective stop to estimate position size.</div>
+          <div className="risk-placeholder">
+            <span className="risk-placeholder-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M5 17 10 12l3 3 6-7" />
+                <path d="M14 8h5v5" />
+              </svg>
+            </span>
+            <strong>Your sizing estimate will appear here</strong>
+            <span>Enter an entry price and protective stop to calculate volume.</span>
+          </div>
         ) : (
           <>
             <div className="risk-volume">{calculation.volume}<span>lots</span></div>
+            <p className="risk-estimate-source">{calculation.simulated ? "Simulation estimate" : "Broker specification estimate"} · No order has been placed</p>
             <dl className="risk-breakdown">
               <div><dt>Instrument</dt><dd>{calculation.symbol}</dd></div>
               <div><dt>Account equity</dt><dd>${calculation.account_equity}</dd></div>
               <div><dt>Risk limit</dt><dd>{calculation.risk_percent}% · ${calculation.risk_budget}</dd></div>
               <div><dt>Estimated risk</dt><dd>${calculation.estimated_risk}</dd></div>
-              <div><dt>Risk within limit</dt><dd>{calculation.risk_within_budget ? "Yes" : "No"}</dd></div>
+              <div><dt>Risk within limit</dt><dd className={calculation.risk_within_budget ? "risk-value-positive" : "risk-value-negative"}>{calculation.risk_within_budget ? "Yes" : "No"}</dd></div>
             </dl>
             {calculation.reason && <p className="risk-warning">{calculation.reason}</p>}
             <p className="safety-note">Sizing estimate only. No order has been placed. Values use the connected account&apos;s supported symbol specifications.</p>
@@ -144,16 +186,26 @@ export function RiskCalculator() {
         )}
       </section>
       {policy && (
-        <section className="card panel" style={{ gridColumn: "1 / -1" }}>
-          <h2>Configured risk policy</h2>
-          <dl className="risk-breakdown">
-            <div><dt>Risk per trade</dt><dd>Maximum {policy.max_risk_per_trade_percent}%</dd></div>
-            <div><dt>Daily loss</dt><dd>{policy.max_daily_loss_percent}%</dd></div>
-            <div><dt>Weekly loss</dt><dd>{policy.max_weekly_loss_percent}%</dd></div>
-            <div><dt>Open positions</dt><dd>Maximum {policy.max_simultaneous_positions}</dd></div>
-            <div><dt>Aggregate open risk</dt><dd>{policy.max_aggregate_open_risk_percent}%</dd></div>
-            <div><dt>Prohibited strategies</dt><dd>Martingale and grid</dd></div>
-          </dl>
+        <section className="card panel risk-policy">
+          <div className="risk-section-heading">
+            <div>
+              <span className="risk-eyebrow">ACCOUNT GUARDRAILS</span>
+              <h2>Configured risk policy</h2>
+              <p>Limits currently supplied by the platform configuration.</p>
+            </div>
+            <span className={`risk-result-badge ${policy.live_trading_enabled ? "live-enabled" : "within-limit"}`}>
+              Live trading {policy.live_trading_enabled ? "enabled" : "disabled"}
+            </span>
+          </div>
+          <div className="risk-policy-grid">
+            <div><span>Risk per trade</span><strong>Max {policy.max_risk_per_trade_percent}%</strong></div>
+            <div><span>Daily loss</span><strong>{policy.max_daily_loss_percent}%</strong></div>
+            <div><span>Weekly loss</span><strong>{policy.max_weekly_loss_percent}%</strong></div>
+            <div><span>Open positions</span><strong>Max {policy.max_simultaneous_positions}</strong></div>
+            <div><span>Aggregate open risk</span><strong>{policy.max_aggregate_open_risk_percent}%</strong></div>
+            <div><span>Martingale</span><strong className={policy.martingale_allowed ? "policy-allowed" : "policy-blocked"}>{policy.martingale_allowed ? "Allowed" : "Blocked"}</strong></div>
+            <div><span>Grid trading</span><strong className={policy.grid_allowed ? "policy-allowed" : "policy-blocked"}>{policy.grid_allowed ? "Allowed" : "Blocked"}</strong></div>
+          </div>
           <p className="safety-note">Policy values are environment-configured. This page does not change or enforce live trading permission.</p>
         </section>
       )}

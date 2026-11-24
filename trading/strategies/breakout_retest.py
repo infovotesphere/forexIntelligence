@@ -1,6 +1,7 @@
 from collections.abc import Mapping, Sequence
 
 from trading.analysis.indicators import calculate_indicators
+from shared.contracts.analysis import IndicatorSet
 from trading.strategies.base import Strategy, StrategySignal
 
 
@@ -14,7 +15,8 @@ class BreakoutRetestStrategy(Strategy):
         resistance = max(float(candle.high) for candle in range_candles)
         support = min(float(candle.low) for candle in range_candles)
         breakout = candles[-3:]
-        indicators = calculate_indicators(candles)
+        cached_indicators = context.get("indicators") if context else None
+        indicators = cached_indicators if isinstance(cached_indicators, IndicatorSet) else calculate_indicators(candles)
         close = float(candles[-1].close)
 
         if float(breakout[-2].close) > resistance and float(candles[-1].close) <= resistance * 1.0005 and close >= resistance:

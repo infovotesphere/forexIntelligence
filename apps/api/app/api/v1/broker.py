@@ -4,17 +4,19 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.broker import simulation_adapter
-from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
 from app.core.config import get_settings
+from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
 from app.core.database import get_db
-from app.core.runtime import runtime_store
+from app.core.market_data import get_mt5_candles
 from app.core.persistent_runtime import save_runtime_state
+from app.core.real_market_data import get_real_market_candles
+from app.core.runtime import runtime_store
 from app.models.trade_deal import TradeDeal
 
 router = APIRouter(tags=["broker"])
@@ -27,6 +29,44 @@ class DemoConnectRequest(BaseModel):
     account_id: str | None = Field(default=None, pattern="^[0-9]{1,20}$")
     password: SecretStr | None = Field(default=None, max_length=255, repr=False)
     server: str | None = Field(default=None, max_length=255)
+
+
+class SimulationOrderRequest(BaseModel):
+    symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
+    direction: Literal["BUY", "SELL"]
+    order_type: Literal["MARKET", "BUY_STOP", "SELL_STOP"] = "MARKET"
+    volume: Decimal = Field(gt=0)
+    stop_price: Decimal | None = Field(default=None, gt=0)
+    stop_loss: Decimal | None = Field(default=None, gt=0)
+    take_profit: Decimal | None = Field(default=None, gt=0)
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def validate_order_type(self) -> "SimulationOrderRequest":
+        if self.order_type == "MARKET" and self.stop_price is not None:
+            raise ValueError("Market orders cannot specify a stop entry price")
+        if self.order_type != "MARKET" and self.stop_price is None:
+            raise ValueError("Buy stop and sell stop orders require an entry price")
+        if self.order_type == "BUY_STOP" and self.direction != "BUY":
+            raise ValueError("Buy stop orders must use the BUY direction")
+        if self.order_type == "SELL_STOP" and self.direction != "SELL":
+            raise ValueError("Sell stop orders must use the SELL direction")
+        return self
+
+
+class ModifySimulationPositionRequest(BaseModel):
+    stop_loss: Decimal = Field(ge=0)
+    take_profit: Decimal = Field(ge=0)
+
+
+class CloseSimulationPositionsRequest(BaseModel):
+    tickets: list[str] = Field(min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_unique_tickets(self) -> "CloseSimulationPositionsRequest":
+        if len(set(self.tickets)) != len(self.tickets):
+            raise ValueError("A position can only be selected once")
+        return self
 
 
 @router.post("/accounts/connect")
@@ -145,8 +185,8 @@ class WorkerCandle(BaseModel):
 class WorkerCandleSnapshot(BaseModel):
     base_symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
     symbol: str = Field(min_length=1, max_length=32, pattern="^[A-Za-z0-9._-]+$")
-    timeframe: Literal["M5", "M15", "M30", "H1", "H4", "D1"]
-    candles: list[WorkerCandle] = Field(min_length=2, max_length=501)
+    timeframe: Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1"]
+    candles: list[WorkerCandle] = Field(min_length=2, max_length=2001)
 
     @model_validator(mode="after")
     def validate_chronological_order(self) -> "WorkerCandleSnapshot":
@@ -165,7 +205,7 @@ class WorkerStatusUpdate(BaseModel):
     equity: Decimal | None = None
     message: str = Field(max_length=500)
     market_data: list[dict] = Field(default_factory=list, max_length=32)
-    market_candles: list[WorkerCandleSnapshot] = Field(default_factory=list, max_length=48)
+    market_candles: list[WorkerCandleSnapshot] = Field(default_factory=list, max_length=64)
     open_positions: list[WorkerOpenPosition] = Field(default_factory=list, max_length=500)
     history_deals: list[WorkerDealSnapshot] = Field(default_factory=list, max_length=500)
 
@@ -402,6 +442,149 @@ def markets() -> list[dict]:
     return instruments
 
 
+@router.get("/markets/{symbol}/candles")
+def market_candles(
+    symbol: str,
+    timeframe: Literal["M1", "M5", "M15", "M30", "H1", "H4", "D1"] = "M5",
+    limit: int = Query(default=300, ge=30, le=2000),
+) -> dict:
+    state = runtime_store.state
+    normalized_symbol = symbol.upper()
+    if state.broker == "mt5":
+        if not runtime_store.broker_connected():
+            raise HTTPException(
+                status_code=503,
+                detail="MT5 worker is disconnected; refusing to substitute non-broker candles",
+            )
+        snapshot = get_mt5_candles(normalized_symbol, timeframe)
+        if snapshot is None:
+            raise HTTPException(
+                status_code=503,
+                detail=f"No fresh MT5 {timeframe} candle history is available for {normalized_symbol}",
+            )
+        actual_symbol, candles = snapshot
+        data_source = "mt5"
+    elif state.broker == "simulation":
+        try:
+            candles = get_real_market_candles(normalized_symbol, timeframe)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        actual_symbol = normalized_symbol
+        data_source = "real_market"
+    else:
+        minutes = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}[timeframe]
+        end = datetime.now(UTC)
+        start = end - timedelta(minutes=minutes * (limit - 1))
+        try:
+            candles = simulation_adapter.get_historical_candles(normalized_symbol, timeframe, start, end)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        actual_symbol = normalized_symbol
+        data_source = "simulation"
+
+    return {
+        "symbol": actual_symbol,
+        "timeframe": timeframe,
+        "data_source": data_source,
+        "simulated": state.broker != "mt5",
+        "candles": [
+            {
+                "time": candle.time.isoformat(),
+                "open": str(candle.open),
+                "high": str(candle.high),
+                "low": str(candle.low),
+                "close": str(candle.close),
+                "volume": str(candle.volume),
+            }
+            for candle in candles[-limit:]
+        ],
+    }
+
+
+@router.get("/practice/status")
+def practice_status() -> dict:
+    closed_before_refresh = len(simulation_adapter.get_deal_history())
+    account = simulation_adapter.get_account_info()
+    if len(simulation_adapter.get_deal_history()) > closed_before_refresh:
+        save_runtime_state()
+    return {
+        "connected": True,
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "account": {
+            "account_id": account.account_id,
+            "currency": account.currency,
+            "balance": str(account.balance),
+            "equity": str(account.equity),
+        },
+    }
+
+
+@router.get("/practice/markets")
+def practice_markets() -> list[dict]:
+    instruments = []
+    for instrument in simulation_adapter.get_instruments():
+        tick = simulation_adapter.get_tick(instrument.symbol)
+        instruments.append({
+            "symbol": instrument.symbol,
+            "description": instrument.description,
+            "bid": str(tick.bid),
+            "ask": str(tick.ask),
+            "spread": str(tick.ask - tick.bid),
+            "time": tick.time.isoformat(),
+            "digits": instrument.digits,
+            "contract_size": str(instrument.contract_size),
+            "tick_size": str(instrument.tick_size),
+            "tick_value": str(instrument.tick_value),
+            "minimum_volume": str(instrument.minimum_volume),
+            "maximum_volume": str(instrument.maximum_volume),
+            "volume_step": str(instrument.volume_step),
+            "trade_allowed": instrument.trade_allowed,
+            "simulated": True,
+            "execution_mode": "paper_only",
+        })
+    return instruments
+
+
+@router.get("/practice/positions")
+def practice_positions() -> dict:
+    state_before_refresh = simulation_adapter.export_state()
+    pending_orders = simulation_adapter.get_pending_orders()
+    items = simulation_adapter.get_open_positions()
+    account = simulation_adapter.get_account_info()
+    if simulation_adapter.export_state() != state_before_refresh:
+        save_runtime_state()
+    return {
+        "items": items,
+        "total": len(items),
+        "pending_orders": pending_orders,
+        "pending_total": len(pending_orders),
+        "connected": True,
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "account": {
+            "account_id": account.account_id,
+            "currency": account.currency,
+            "balance": str(account.balance),
+            "equity": str(account.equity),
+        },
+    }
+
+
+@router.get("/practice/history")
+def practice_history() -> dict:
+    items = simulation_adapter.get_deal_history()
+    return {
+        "items": items,
+        "total": len(items),
+        "connected": True,
+        "simulated": True,
+        "trading_mode": "paper_only",
+    }
+
+
 @router.get("/positions")
 def positions() -> dict:
     state = runtime_store.state
@@ -411,6 +594,8 @@ def positions() -> dict:
             "items": [],
             "total": 0,
             "connected": False,
+            "broker": state.broker,
+            "can_trade_simulation": False,
             "environment": state.environment,
             "simulated": state.broker == "simulation",
             "trading_mode": "paper_only",
@@ -419,15 +604,144 @@ def positions() -> dict:
         items = [dict(position) for position in state.open_positions]
         simulated = False
     else:
+        closed_before_refresh = len(simulation_adapter.get_deal_history())
         items = simulation_adapter.get_open_positions()
+        if len(simulation_adapter.get_deal_history()) > closed_before_refresh:
+            save_runtime_state()
         simulated = True
     return {
         "items": items,
         "total": len(items),
         "connected": True,
+        "broker": state.broker,
+        "can_trade_simulation": state.broker == "simulation",
         "environment": state.environment,
         "simulated": simulated,
         "trading_mode": "paper_only",
+    }
+
+
+@router.post("/orders")
+@router.post("/practice/orders")
+def create_simulation_order(payload: SimulationOrderRequest) -> dict:
+    settings = get_settings()
+    account = simulation_adapter.get_account_info()
+    max_risk_amount = account.equity * Decimal("0.01")
+    max_aggregate_risk_amount = account.equity * settings.max_aggregate_open_risk_percent / Decimal("100")
+    try:
+        order = simulation_adapter.submit_order(
+            payload.symbol,
+            payload.direction,
+            payload.volume,
+            stop_loss=payload.stop_loss,
+            take_profit=payload.take_profit,
+            order_type=payload.order_type,
+            stop_price=payload.stop_price,
+            idempotency_key=payload.idempotency_key,
+            max_risk_amount=max_risk_amount,
+            max_aggregate_risk_amount=max_aggregate_risk_amount,
+            max_open_positions=settings.max_simultaneous_positions,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    position = None
+    if order.broker_position_id is not None:
+        position = next(
+            (item for item in simulation_adapter.get_open_positions() if item["ticket"] == order.broker_position_id),
+            None,
+        )
+    save_runtime_state()
+    return {
+        "accepted": order.accepted,
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "order_type": payload.order_type,
+        "status": order.status,
+        "message": order.message,
+        "position": position,
+        "pending_order": (
+            {
+                "ticket": order.broker_order_id,
+                "symbol": payload.symbol.upper(),
+                "order_type": payload.order_type,
+                "direction": payload.direction,
+                "volume": str(payload.volume),
+                "stop_price": str(payload.stop_price),
+                "stop_loss": str(payload.stop_loss) if payload.stop_loss is not None else "0",
+                "take_profit": str(payload.take_profit) if payload.take_profit is not None else "0",
+                "simulated": True,
+            }
+            if order.broker_position_id is None
+            else None
+        ),
+    }
+
+
+@router.delete("/practice/orders/{ticket}")
+def cancel_practice_order(ticket: str) -> dict:
+    try:
+        order = simulation_adapter.cancel_pending_order(ticket)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    save_runtime_state()
+    return {"cancelled": True, "simulated": True, "trading_mode": "paper_only", "order": order}
+
+
+@router.post("/positions/{ticket}/close")
+@router.post("/practice/positions/{ticket}/close")
+def close_simulation_position(ticket: str) -> dict:
+    try:
+        deal = simulation_adapter.close_position(ticket)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    save_runtime_state()
+    return {"closed": True, "simulated": True, "trading_mode": "paper_only", "deal": deal}
+
+
+@router.post("/practice/positions/close-bulk")
+def close_simulation_positions(payload: CloseSimulationPositionsRequest) -> dict:
+    try:
+        deals = simulation_adapter.close_positions(payload.tickets)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    save_runtime_state()
+    return {
+        "closed": len(deals),
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "deals": deals,
+    }
+
+
+@router.patch("/practice/positions/{ticket}")
+def modify_simulation_position(ticket: str, payload: ModifySimulationPositionRequest) -> dict:
+    settings = get_settings()
+    account = simulation_adapter.get_account_info()
+    try:
+        position = simulation_adapter.modify_position(
+            ticket,
+            payload.stop_loss,
+            payload.take_profit,
+            max_risk_amount=account.equity * Decimal("0.01"),
+            max_aggregate_risk_amount=(
+                account.equity * settings.max_aggregate_open_risk_percent / Decimal("100")
+            ),
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    save_runtime_state()
+    return {
+        "modified": True,
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "position": position,
     }
 
 
@@ -467,6 +781,8 @@ def account_history(db: Session = Depends(get_db)) -> dict:
                 "time": deal_time.isoformat(),
                 "simulated": deal.simulated,
             })
+    elif connected and state.broker == "simulation":
+        items = simulation_adapter.get_deal_history()
     return {
         "items": items,
         "total": len(items),

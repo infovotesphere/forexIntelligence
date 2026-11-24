@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from trading.connectors.simulation import SimulationAdapter
-from trading.analysis.indicators import calculate_indicators, ema, rsi
+from trading.analysis.indicators import calculate_indicator_history, calculate_indicators, ema, rsi
 from trading.analysis.market_structure import market_structure
 from trading.analysis.market_regime import classify_regime
 from trading.analysis.multi_timeframe import analyse_timeframes
@@ -17,6 +17,20 @@ def test_indicator_calculations_are_deterministic_and_finite():
     assert indicators.bollinger_upper >= indicators.bollinger_lower
     assert ema([1, 2, 3], 3)[-1] > 1
     assert len(rsi([1, 2, 3], 14)) == 3
+
+
+def test_indicator_history_matches_causal_prefix_values():
+    adapter = SimulationAdapter()
+    adapter.connect()
+    start = datetime(2026, 1, 1, tzinfo=UTC)
+    candles = adapter.get_historical_candles("EURUSD", "H1", start, start + timedelta(hours=250))
+
+    history = calculate_indicator_history(candles)
+
+    assert len(history) == len(candles)
+    for index in (1, 13, 14, 29, 49, 199, 249):
+        expected = calculate_indicators(candles[:index + 1])
+        assert history[index] == expected
 
 
 def test_market_structure_and_regime():

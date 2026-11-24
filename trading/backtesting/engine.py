@@ -1,6 +1,8 @@
 from dataclasses import replace
 from decimal import Decimal
 
+from shared.contracts.analysis import IndicatorSet
+from trading.analysis.indicators import calculate_indicator_history
 from trading.signals.validator import SignalValidationError, round_to_tick, validate_signal
 from trading.strategies.base import Strategy
 
@@ -16,9 +18,15 @@ def backtest_strategy(
     rejected = 0
     index = 1
     price_step = tick_size or Decimal(1).scaleb(Decimal(str(candles[-1].close)).as_tuple().exponent)
+    indicators = calculate_indicator_history(candles)
 
     while index < len(candles) - 1:
-        candidate = strategy.evaluate(symbol, timeframe, candles[:index + 1])
+        candidate = strategy.evaluate(
+            symbol,
+            timeframe,
+            candles[:index + 1],
+            context={"indicators": indicators[index]},
+        )
         if candidate is None:
             index += 1
             continue

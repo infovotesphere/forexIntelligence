@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { startVisiblePolling } from "@/services/polling";
 import { DashboardPerformance } from "./DashboardPerformance";
 
 type AccountStatus = {
@@ -51,11 +52,10 @@ export function DashboardOverview() {
       }
     }
 
-    void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 10000);
+    const stopPolling = startVisiblePolling(refresh, 10000);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      stopPolling();
     };
   }, []);
 

@@ -17,8 +17,8 @@ from trading.connectors.mt5 import MT5Adapter
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("forex-mt5-worker")
 MONITORED_SYMBOLS = ("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD", "XAUUSD")
-TIMEFRAME_MINUTES = {"M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
-CANDLE_HISTORY_BARS = 501
+TIMEFRAME_MINUTES = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}
+CANDLE_HISTORY_BARS = 2001
 CANDLE_REFRESH_SECONDS = 60
 
 

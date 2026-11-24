@@ -18,7 +18,7 @@ from app.main import app
 client = TestClient(app, cookies={AUTH_COOKIE_NAME: create_access_token("test@example.com", "administrator")})
 
 
-def test_worker_candle_history_accepts_501_bars_and_rejects_more():
+def test_worker_candle_history_accepts_2001_bars_and_rejects_more():
     start = datetime(2026, 1, 1, tzinfo=UTC)
     candles = [
         {
@@ -29,7 +29,7 @@ def test_worker_candle_history_accepts_501_bars_and_rejects_more():
             "close": "1.10050",
             "volume": "100",
         }
-        for index in range(501)
+        for index in range(2001)
     ]
     snapshot = {
         "base_symbol": "EURUSD",
@@ -38,12 +38,13 @@ def test_worker_candle_history_accepts_501_bars_and_rejects_more():
         "candles": candles,
     }
 
-    assert len(WorkerCandleSnapshot(**snapshot).candles) == 501
+    assert len(WorkerCandleSnapshot(**snapshot).candles) == 2001
+    assert WorkerCandleSnapshot(**{**snapshot, "timeframe": "M1"}).timeframe == "M1"
     with pytest.raises(ValidationError):
         WorkerCandleSnapshot(
             **{
                 **snapshot,
-                "candles": [*candles, {**candles[-1], "time": start + timedelta(hours=501)}],
+                "candles": [*candles, {**candles[-1], "time": start + timedelta(hours=2001)}],
             }
         )
 

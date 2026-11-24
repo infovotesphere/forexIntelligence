@@ -2,45 +2,44 @@
 
 import { useEffect, useState } from "react";
 import { getApiBaseUrl } from "@/services/api";
+import { startVisiblePolling } from "@/services/polling";
 
 export function StatusBar() {
   const [status, setStatus] = useState({ connected: false, broker: "none", environment: "demo", engine: false, message: "Checking..." });
 
-  async function refresh() {
-    try {
-      const [accountResponse, engineResponse] = await Promise.all([
-        fetch(`${getApiBaseUrl()}/api/v1/accounts/status`, { cache: "no-store" }),
-        fetch(`${getApiBaseUrl()}/api/v1/engine/status`, { cache: "no-store" }),
-      ]);
-      if (!accountResponse.ok || !engineResponse.ok) throw new Error("API unavailable");
-      const account = await accountResponse.json();
-      const engine = await engineResponse.json();
-      setStatus({
-        connected: Boolean(account.connected),
-        broker: account.broker,
-        environment: account.broker === "simulation"
-          ? "Simulation demo"
-          : account.broker === "mt5"
-            ? account.environment === "live" ? "MT5 live · read only" : "MT5 demo"
-            : "Demo account",
-        engine: Boolean(engine.running),
-        message: engine.message,
-      });
-    } catch {
-      setStatus({ connected: false, broker: "none", environment: "Demo account", engine: false, message: "API unavailable" });
-    }
-  }
-
   useEffect(() => {
-    const initialRefresh = window.setTimeout(() => {
-      void refresh();
-    }, 0);
-    const interval = window.setInterval(() => {
-      void refresh();
-    }, 5000);
+    let active = true;
+    async function refresh() {
+      try {
+        const [accountResponse, engineResponse] = await Promise.all([
+          fetch(`${getApiBaseUrl()}/api/v1/accounts/status`, { cache: "no-store" }),
+          fetch(`${getApiBaseUrl()}/api/v1/engine/status`, { cache: "no-store" }),
+        ]);
+        if (!accountResponse.ok || !engineResponse.ok) throw new Error("API unavailable");
+        const account = await accountResponse.json();
+        const engine = await engineResponse.json();
+        if (active) {
+          setStatus({
+            connected: Boolean(account.connected),
+            broker: account.broker,
+            environment: account.broker === "simulation"
+              ? "Simulation demo"
+              : account.broker === "mt5"
+                ? account.environment === "live" ? "MT5 live · read only" : "MT5 demo"
+                : "Demo account",
+            engine: Boolean(engine.running),
+            message: engine.message,
+          });
+        }
+      } catch {
+        if (active) setStatus({ connected: false, broker: "none", environment: "Demo account", engine: false, message: "API unavailable" });
+      }
+    }
+
+    const stopPolling = startVisiblePolling(refresh, 15000);
     return () => {
-      window.clearTimeout(initialRefresh);
-      window.clearInterval(interval);
+      active = false;
+      stopPolling();
     };
   }, []);
 

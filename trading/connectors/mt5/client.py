@@ -9,7 +9,7 @@ from trading.connectors.base import BrokerConnector
 class MT5Adapter(BrokerConnector):
     """Windows MT5 read adapter; broker-side order submission is deliberately disabled."""
 
-    TIMEFRAMES = ("M5", "M15", "M30", "H1", "H4", "D1")
+    TIMEFRAMES = ("M1", "M5", "M15", "M30", "H1", "H4", "D1")
 
     def __init__(self, login: int, password: str, server: str, environment: str = "demo") -> None:
         if sys.platform != "win32":

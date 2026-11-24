@@ -10,7 +10,7 @@ class SingleBuySignal:
     def __init__(self) -> None:
         self.emitted = False
 
-    def evaluate(self, symbol: str, timeframe: str, candles: list) -> StrategySignal | None:
+    def evaluate(self, symbol: str, timeframe: str, candles: list, context=None) -> StrategySignal | None:
         if self.emitted:
             return None
         self.emitted = True
@@ -20,7 +20,7 @@ class SingleBuySignal:
 
 
 class TwoTradeSignals:
-    def evaluate(self, symbol: str, timeframe: str, candles: list) -> StrategySignal | None:
+    def evaluate(self, symbol: str, timeframe: str, candles: list, context=None) -> StrategySignal | None:
         if len(candles) == 2:
             return StrategySignal(
                 "test_buy", "BUY", timeframe, 100, 99, 100.5, 101, 102, 80, "test",

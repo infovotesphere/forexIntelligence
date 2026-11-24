@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AuthLayout } from "@/components/AuthLayout";
 
 export default function Register() {
   const router = useRouter();
@@ -34,11 +35,11 @@ export default function Register() {
   }
 
   return (
-    <main className="auth-screen">
+    <AuthLayout>
       <section className="card auth-card">
-        <div className="brand" style={{ marginBottom: 12 }}><span className="brand-mark">FI</span><span>Forex Intelligence</span></div>
-        <h1>Create an account</h1>
-        <p className="safety-note">New accounts start with viewer access. An administrator must be provisioned before registration is available.</p>
+        <div className="auth-form-eyebrow">GET STARTED</div>
+        <h1>Create your account</h1>
+        <p className="auth-description">New accounts start with viewer access. An administrator must be provisioned before registration is available.</p>
         <form className="mt5-form" onSubmit={submit}>
           <label>
             Name
@@ -59,6 +60,6 @@ export default function Register() {
         </form>
         <p className="account-link">Already registered? <Link href="/login">Sign in</Link></p>
       </section>
-    </main>
+    </AuthLayout>
   );
 }

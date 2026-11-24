@@ -3,6 +3,7 @@
 import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AuthLayout } from "@/components/AuthLayout";
 
 export default function Login() {
   const router = useRouter();
@@ -33,11 +34,11 @@ export default function Login() {
   }
 
   return (
-    <main className="auth-screen">
+    <AuthLayout>
       <section className="card auth-card">
-        <div className="brand" style={{ marginBottom: 12 }}><span className="brand-mark">FI</span><span>Forex Intelligence</span></div>
+        <div className="auth-form-eyebrow">WELCOME BACK</div>
         <h1>Sign in</h1>
-        <p className="safety-note">Sign in to your Forex Intelligence account.</p>
+        <p className="auth-description">Sign in to access your trading workspace.</p>
         <form className="mt5-form" onSubmit={submit}>
           <label>
             Email
@@ -54,6 +55,6 @@ export default function Login() {
         </form>
         <p className="account-link">New here? <Link href="/register">Create an account</Link></p>
       </section>
-    </main>
+    </AuthLayout>
   );
 }
