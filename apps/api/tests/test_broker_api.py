@@ -603,6 +603,31 @@ def test_practice_account_works_without_broker_connection(monkeypatch):
         simulation_adapter.restore_state(previous_book)
 
 
+def test_practice_account_deposit_adds_funds_and_persists(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(runtime_store, "state", RuntimeState())
+    saves: list[dict] = []
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: saves.append(simulation_adapter.export_state()))
+
+    try:
+        response = client.post("/api/v1/practice/account/deposit", json={"amount": "250.50"})
+        invalid_amount = client.post("/api/v1/practice/account/deposit", json={"amount": "0"})
+
+        assert response.status_code == 200
+        assert response.json()["deposited"] == "250.50"
+        assert response.json()["simulated"] is True
+        assert response.json()["account"]["balance"] == "10250.50"
+        assert invalid_amount.status_code == 422
+        assert simulation_adapter.export_state()["balance"] == "10250.50"
+        assert len(saves) == 1
+        assert saves[0]["balance"] == "10250.50"
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
 def test_practice_position_can_be_modified_and_bulk_closed(monkeypatch):
     previous_runtime = runtime_store.state
     previous_book = simulation_adapter.export_state()

@@ -55,6 +55,10 @@ class SimulationOrderRequest(BaseModel):
         return self
 
 
+class PracticeDepositRequest(BaseModel):
+    amount: Decimal = Field(gt=0, max_digits=18, decimal_places=2)
+
+
 class ModifySimulationPositionRequest(BaseModel):
     stop_loss: Decimal = Field(ge=0)
     take_profit: Decimal = Field(ge=0)
@@ -646,6 +650,28 @@ def practice_positions() -> dict:
         "trading_mode": "paper_only",
         "account": {
             "account_id": account.account_id,
+            "currency": account.currency,
+            "balance": str(account.balance),
+            "equity": str(account.equity),
+        },
+    }
+
+
+@router.post("/practice/account/deposit")
+def deposit_practice_account(payload: PracticeDepositRequest) -> dict:
+    try:
+        simulation_adapter.add_funds(payload.amount)
+        account = simulation_adapter.get_account_info()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    save_runtime_state()
+    return {
+        "deposited": str(payload.amount),
+        "simulated": True,
+        "trading_mode": "paper_only",
+        "account": {
             "currency": account.currency,
             "balance": str(account.balance),
             "equity": str(account.equity),

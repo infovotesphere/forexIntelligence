@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from shared.contracts.broker import Tick
 from trading.connectors.simulation import SimulationAdapter
 
@@ -13,6 +15,27 @@ def test_simulation_connection_and_account():
     assert account.currency == "USD"
     assert account.balance == Decimal("10000")
     assert account.simulated
+
+
+def test_simulation_account_can_add_funds():
+    adapter = SimulationAdapter()
+    adapter.connect()
+
+    balance = adapter.add_funds(Decimal("250.50"))
+
+    assert balance == Decimal("10250.50")
+    assert adapter.get_account_info().balance == Decimal("10250.50")
+
+
+def test_simulation_account_rejects_non_positive_funds():
+    adapter = SimulationAdapter()
+    adapter.connect()
+
+    for amount in (Decimal("0"), Decimal("-1")):
+        with pytest.raises(ValueError, match="positive finite"):
+            adapter.add_funds(amount)
+
+    assert adapter.get_account_info().balance == Decimal("10000")
 
 
 def test_simulation_instruments_and_ticks():

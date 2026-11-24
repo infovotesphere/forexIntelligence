@@ -107,6 +107,13 @@ class SimulationAdapter(BrokerConnector):
             free_margin=equity,
         )
 
+    def add_funds(self, amount: Decimal) -> Decimal:
+        self._require_connection()
+        if not amount.is_finite() or amount <= 0:
+            raise ValueError("The deposit amount must be a positive finite value")
+        self._balance += amount
+        return self._balance
+
     def get_instruments(self) -> list[SymbolInfo]:
         self._require_connection()
         return [self.get_symbol_info(symbol) for symbol in self.SYMBOLS]

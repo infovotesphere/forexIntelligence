@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { startVisiblePolling } from "@/services/polling";
 import { SimulationTradeTicket } from "@/components/SimulationTradeTicket";
 
@@ -90,6 +90,12 @@ export function OrderActivity() {
   const [pendingCancellation, setPendingCancellation] = useState<PendingOrder | null>(null);
   const [cancelError, setCancelError] = useState("");
   const cancelDialogRef = useRef<HTMLDialogElement>(null);
+  const [restockOpen, setRestockOpen] = useState(false);
+  const [restockAmount, setRestockAmount] = useState("1000.00");
+  const [restockBusy, setRestockBusy] = useState(false);
+  const [restockError, setRestockError] = useState("");
+  const [restockSuccess, setRestockSuccess] = useState("");
+  const restockDialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     const dialog = cancelDialogRef.current;
@@ -97,6 +103,13 @@ export function OrderActivity() {
     if (pendingCancellation && !dialog.open) dialog.showModal();
     if (!pendingCancellation && dialog.open) dialog.close();
   }, [pendingCancellation]);
+
+  useEffect(() => {
+    const dialog = restockDialogRef.current;
+    if (!dialog) return;
+    if (restockOpen && !dialog.open) dialog.showModal();
+    if (!restockOpen && dialog.open) dialog.close();
+  }, [restockOpen]);
 
   useEffect(() => {
     let active = true;
@@ -170,6 +183,31 @@ export function OrderActivity() {
   function requestCancelPendingOrder(order: PendingOrder) {
     setCancelError("");
     setPendingCancellation(order);
+  }
+
+  async function restockPracticeAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setRestockBusy(true);
+    setRestockError("");
+    try {
+      const response = await fetch("/api/v1/practice/account/deposit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ amount: restockAmount }),
+      });
+      const result = await response.json() as { detail?: unknown };
+      if (!response.ok) {
+        throw new Error(typeof result.detail === "string" ? result.detail : "Practice account could not be restocked");
+      }
+      const currency = practicePositions?.account.currency ?? "USD";
+      setRestockSuccess(`${currency} ${Number(restockAmount).toFixed(2)} added to your practice balance.`);
+      setRestockOpen(false);
+      setRefreshVersion((version) => version + 1);
+    } catch (cause) {
+      setRestockError(cause instanceof Error ? cause.message : "Practice account could not be restocked");
+    } finally {
+      setRestockBusy(false);
+    }
   }
 
   const openPositions = (positions?.items ?? []).filter((position) => !position.simulated);
@@ -251,8 +289,25 @@ export function OrderActivity() {
             <strong>{practicePositions?.account.currency ?? "USD"} {practicePositions?.account.balance ?? "—"} practice balance</strong>
             <p>{practicePositions?.total ?? 0} open virtual positions · independent of your broker account</p>
           </div>
-          <span className="pill simulation-pill">PRACTICE ONLY</span>
+          <div className="practice-account-actions">
+            <button
+              className="account-restock-button primary-button"
+              type="button"
+              aria-haspopup="dialog"
+              disabled={!practicePositions || restockBusy}
+              onClick={() => {
+                setRestockError("");
+                setRestockSuccess("");
+                setRestockOpen(true);
+              }}
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 4v12M4 10h12" /></svg>
+              Add practice funds
+            </button>
+            <span className="pill simulation-pill">PRACTICE ONLY</span>
+          </div>
         </div>
+        {restockSuccess && <p className="restock-success" role="status">{restockSuccess}</p>}
         {!practicePositions ? (
           <div className="empty history-empty">Loading the independent practice account…</div>
         ) : practicePositions.items.length === 0 ? (
@@ -455,6 +510,55 @@ export function OrderActivity() {
             </footer>
           </div>
         )}
+      </dialog>
+      <dialog
+        ref={restockDialogRef}
+        className="practice-restock-dialog"
+        aria-labelledby="practice-restock-title"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!restockBusy) setRestockOpen(false);
+        }}
+      >
+        <form onSubmit={restockPracticeAccount}>
+          <header className="practice-restock-header">
+            <span className="practice-restock-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 3.5v17M17 7.5c0-1.7-1.9-3-5-3s-5 1.3-5 3 1.5 2.5 5 3 5 1.4 5 3.2-1.9 3.3-5 3.3-5-1.4-5-3.3" /></svg>
+            </span>
+            <div>
+              <span className="system-eyebrow">Simulation account</span>
+              <h2 id="practice-restock-title">Add practice funds</h2>
+              <p>Top up your virtual balance without affecting your broker account.</p>
+            </div>
+            <button className="modal-close" type="button" aria-label="Close restock dialog" disabled={restockBusy} onClick={() => setRestockOpen(false)}>×</button>
+          </header>
+          <div className="practice-restock-body">
+            <div className="practice-restock-current">
+              <span>Current balance</span>
+              <strong>{practicePositions?.account.currency ?? "USD"} {Number(practicePositions?.account.balance ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            </div>
+            <label className="practice-restock-amount">
+              <span>Amount to add <small>{practicePositions?.account.currency ?? "USD"}</small></span>
+              <input
+                autoFocus
+                type="number"
+                min="0.01"
+                step="0.01"
+                required
+                inputMode="decimal"
+                value={restockAmount}
+                onChange={(event) => setRestockAmount(event.target.value)}
+                aria-label="Amount to add to practice balance"
+              />
+            </label>
+            <p className="practice-restock-note">Funds are added to the existing simulation balance. Your positions and trade history stay unchanged.</p>
+            {restockError && <p className="error-text" role="alert">{restockError}</p>}
+          </div>
+          <footer className="practice-restock-actions">
+            <button className="secondary-button" type="button" disabled={restockBusy} onClick={() => setRestockOpen(false)}>Not now</button>
+            <button className="primary-button" type="submit" disabled={restockBusy}>{restockBusy ? "Adding funds…" : "Add funds"}</button>
+          </footer>
+        </form>
       </dialog>
     </div>
   );

@@ -782,6 +782,26 @@ button, input, select { font: inherit; }
 .order-cancel-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 .order-cancel-actions button { min-height: 38px; }
 .order-cancel-dialog button:disabled { opacity: .55; cursor: wait; }
+.practice-restock-dialog { width: min(480px, calc(100vw - 28px)); max-width: 480px; overflow: hidden; margin: auto; border: 1px solid #2b3c4b; border-radius: 16px; padding: 0; background: radial-gradient(ellipse at 92% 0, rgba(42,199,154,.09), transparent 42%), #0e1722; color: var(--foreground); box-shadow: 0 26px 84px rgba(0,0,0,.68); }
+.practice-restock-dialog::backdrop { background: rgba(2,7,12,.78); backdrop-filter: blur(5px); }
+.practice-restock-header { display: flex; align-items: flex-start; gap: 12px; padding: 19px 20px 16px; border-bottom: 1px solid var(--border); }
+.practice-restock-header > div { min-width: 0; }
+.practice-restock-header h2 { margin: 4px 0; font-size: 17px; }
+.practice-restock-header p { margin: 0; color: #8293a4; font-size: 10px; line-height: 1.5; }
+.practice-restock-header .modal-close { margin-left: auto; }
+.practice-restock-icon { display: grid; width: 40px; height: 40px; flex: 0 0 auto; place-items: center; border: 1px solid rgba(53,200,149,.24); border-radius: 11px; background: rgba(16,54,44,.34); color: #75d6bd; }
+.practice-restock-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.practice-restock-body { display: grid; gap: 14px; padding: 17px 20px 19px; }
+.practice-restock-current { display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid rgba(40,57,72,.72); border-radius: 9px; padding: 11px 12px; background: rgba(8,13,20,.48); }
+.practice-restock-current span { color: #8193a6; font-size: 10px; }
+.practice-restock-current strong { color: #dce7ef; font-size: 13px; font-variant-numeric: tabular-nums; }
+.practice-restock-amount { display: grid; gap: 7px; color: #a7b5c3; font-size: 10px; }
+.practice-restock-amount > span { display: flex; justify-content: space-between; }
+.practice-restock-amount small { color: #718397; font-size: 9px; }
+.practice-restock-amount input { width: 100%; height: 48px; border: 1px solid #293a4b; border-radius: 8px; padding: 0 12px; outline: none; background: #080d14; color: #e5edf3; font-size: 16px; font-variant-numeric: tabular-nums; }
+.practice-restock-amount input:focus { border-color: #347e70; box-shadow: 0 0 0 2px rgba(52,126,112,.16); }
+.practice-restock-note { margin: 0; color: #8293a4; font-size: 10px; line-height: 1.55; }
+.practice-restock-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid var(--border); padding: 14px 20px 18px; }
 .practice-position-dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
 .practice-position-dialog-header h2 { margin: 4px 0; font-size: 17px; }
 .practice-position-dialog-header p { margin: 0; color: #8293a4; font-size: 11px; }
@@ -905,6 +925,10 @@ button, input, select { font: inherit; }
 .history-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding: 18px; background: linear-gradient(110deg, rgba(20,33,46,.7), rgba(13,21,32,.2)); }
 .history-toolbar strong { font-size: 14px; }
 .history-toolbar p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+.practice-account-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 9px; }
+.account-restock-button { display: inline-flex; height: 34px; align-items: center; gap: 6px; padding-inline: 10px; font-size: 10px; }
+.account-restock-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.restock-success { margin: 12px 18px 0; border: 1px solid rgba(53,200,149,.22); border-radius: 8px; padding: 9px 11px; background: rgba(16,54,44,.25); color: #8ce2c8; font-size: 11px; }
 .history-error { margin: 12px 18px; }
 .history-empty { min-height: 180px; border: 0; border-radius: 0; }
 .history-controls { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid rgba(29,42,56,.72); padding: 12px 18px; background: rgba(8,13,20,.24); }
@@ -1153,6 +1177,11 @@ button, input, select { font: inherit; }
   .performance-day-trade-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .order-cancel-dialog { position: fixed; inset: auto 0 0; width: 100%; max-width: none; margin: 0 auto; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
   .order-cancel-shell { padding: 17px 16px; }
+  .practice-restock-dialog { position: fixed; inset: auto 0 0; width: 100%; max-width: none; margin: 0 auto; border-right: 0; border-bottom: 0; border-left: 0; border-radius: 18px 18px 0 0; padding-bottom: env(safe-area-inset-bottom); }
+  .practice-restock-header { padding: 17px 16px 14px; }
+  .practice-restock-body { padding: 15px 16px; }
+  .practice-restock-actions { padding: 12px 16px 16px; }
+  .practice-account-actions { align-items: flex-end; flex-direction: column; }
 }
 @media (max-width: 400px) {
   .practice-form-fields, .practice-protection-fields { grid-template-columns: 1fr; }
@@ -1172,6 +1201,7 @@ button, input, select { font: inherit; }
   .metrics { grid-template-columns: 1fr 1fr; }
   .performance-day-trade-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .order-cancel-details dl { grid-template-columns: 1fr 1fr; }
+  .practice-account-actions { align-items: flex-start; }
   .market-controls { flex-wrap: wrap; padding: 11px 14px 2px; }
   .market-search { width: 100%; max-width: none; }
   .market-category-list { padding-inline: 14px; }
