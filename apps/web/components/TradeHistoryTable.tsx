@@ -17,6 +17,7 @@ type Deal = {
   net_profit: string;
   time: string;
   simulated: boolean;
+  deal_type?: "ENTRY" | "EXIT";
 };
 
 type HistoryResponse = {
@@ -84,8 +85,16 @@ export function TradeHistoryTable() {
     <section className="card history-panel">
       <div className="history-toolbar">
         <div>
-          <strong>{data ? data.connected ? `${data.total} broker deals · last ${data.period_days} days` : "Broker disconnected" : "Loading broker history"}</strong>
-          <p>Raw broker deal history · refreshing every 15 seconds</p>
+          <strong>{data
+            ? data.connected
+              ? data.simulated
+                ? `${data.total} practice trade events`
+                : `${data.total} broker deals · last ${data.period_days} days`
+              : "Broker disconnected"
+            : "Loading trade history"}</strong>
+          <p>{simulated
+            ? "Practice entries and exits · saved to this account"
+            : "Raw broker deal history · refreshing every 15 seconds"}</p>
         </div>
         <span className={`pill ${simulated ? "simulation-pill" : "broker-pill"}`}>
           {simulated ? "SIMULATION" : "MT5 · READ ONLY"}
@@ -97,7 +106,11 @@ export function TradeHistoryTable() {
       ) : !data.connected ? (
         <div className="empty history-empty">Connect an MT5 account to read its recent broker deals.</div>
       ) : deals.length === 0 ? (
-        <div className="empty history-empty">No broker deals were reported for the last {data.period_days} days.</div>
+        <div className="empty history-empty">
+          {simulated
+            ? "Placed practice trades will appear here and remain available after reload."
+            : `No broker deals were reported for the last ${data.period_days} days.`}
+        </div>
       ) : (
         <>
           <div className="history-controls">
@@ -132,7 +145,7 @@ export function TradeHistoryTable() {
               <div className="history-table-wrap">
                 <table className="table history-table">
                   <thead>
-                    <tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Type</th><th>Volume</th><th>Price</th><th>Profit</th><th>Commission</th><th>Swap</th><th>Net</th></tr>
+                    <tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Profit</th><th>Commission</th><th>Swap</th><th>Net</th></tr>
                   </thead>
                   <tbody>
                     {pageDeals.map((deal) => (
@@ -142,6 +155,7 @@ export function TradeHistoryTable() {
                         <td>{deal.order || "—"}</td>
                         <td>{deal.symbol || "—"}</td>
                         <td><span className={`signal-direction ${deal.direction === "BUY" ? "buy-direction" : deal.direction === "SELL" ? "sell-direction" : ""}`}>{deal.direction}</span></td>
+                        <td>{deal.deal_type ?? "DEAL"}</td>
                         <td>{deal.volume}</td>
                         <td>{deal.price}</td>
                         <td>{deal.profit}</td>
@@ -186,7 +200,9 @@ export function TradeHistoryTable() {
         </>
       )}
       <p className="safety-note history-safety">
-        These are raw broker deals, including any manual activity. They are not yet reconciled to this app&apos;s strategies or simulated orders.
+        {simulated
+          ? "Practice events are virtual executions; they do not represent broker orders."
+          : "These are raw broker deals, including any manual activity. They are not yet reconciled to this app&apos;s strategies or simulated orders."}
       </p>
     </section>
   );

@@ -3,6 +3,7 @@
 import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { useInstrumentSelection } from "@/services/instrumentSelection";
+import { usePracticeVolume } from "@/services/practiceTradePreferences";
 
 type Market = {
   symbol: string;
@@ -29,6 +30,7 @@ type Props = {
   initialSymbol?: string;
   triggerLabel?: string;
   triggerDescription?: string;
+  selectedEntryPrice?: string | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -76,6 +78,7 @@ export function SimulationTradeTicket({
   initialSymbol = "EURUSD",
   triggerLabel = "Place a trade",
   triggerDescription,
+  selectedEntryPrice,
 }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -83,8 +86,15 @@ export function SimulationTradeTicket({
   const { symbol, setSymbol } = useInstrumentSelection(initialSymbol);
   const [orderType, setOrderType] = useState<OrderType>("MARKET");
   const [marketDirection, setMarketDirection] = useState<"BUY" | "SELL">("BUY");
-  const [volume, setVolume] = useState("0.01");
-  const [stopPrice, setStopPrice] = useState("");
+  const { volume, setVolume } = usePracticeVolume();
+  const [stopPriceInput, setStopPriceInput] = useState({
+    selectedEntryPrice: selectedEntryPrice ?? null,
+    value: selectedEntryPrice ?? "",
+  });
+  const selectedEntry = selectedEntryPrice ?? null;
+  const stopPrice = stopPriceInput.selectedEntryPrice === selectedEntry
+    ? stopPriceInput.value
+    : selectedEntry ?? "";
   const [stopLoss, setStopLoss] = useState("");
   const [takeProfit, setTakeProfit] = useState("");
   const [loading, setLoading] = useState(true);
@@ -166,7 +176,7 @@ export function SimulationTradeTicket({
       setSuccess(body.pending_order
         ? `${orderType.replace("_", " ")} for ${symbol} placed and waiting for its trigger.`
         : `${direction} ${volume} ${symbol} market position opened.`);
-      setStopPrice("");
+      setStopPriceInput({ selectedEntryPrice: selectedEntry, value: "" });
       setStopLoss("");
       setTakeProfit("");
       onSubmitted?.(symbol);
@@ -268,7 +278,7 @@ export function SimulationTradeTicket({
                 </label>
                 {orderType !== "MARKET" && (
                   <label className="practice-entry-price"><span>Trigger price <small>Required · {orderType === "BUY_STOP" ? "above ask" : "below bid"}</small></span>
-                    <input required type="number" step={market?.tick_size ?? "any"} min={market?.tick_size ?? "0.00001"} value={stopPrice} onChange={(event) => setStopPrice(event.target.value)} placeholder={orderType === "BUY_STOP" ? market?.ask : market?.bid} />
+                    <input required type="number" step={market?.tick_size ?? "any"} min={market?.tick_size ?? "0.00001"} value={stopPrice} onChange={(event) => setStopPriceInput({ selectedEntryPrice: selectedEntry, value: event.target.value })} placeholder={orderType === "BUY_STOP" ? market?.ask : market?.bid} />
                   </label>
                 )}
               </div>

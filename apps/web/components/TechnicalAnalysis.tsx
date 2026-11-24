@@ -64,6 +64,17 @@ export function TechnicalAnalysis() {
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const timeframeVotes = Object.values(analysis?.multi_timeframe.timeframes ?? {}).reduce(
+    (votes, context) => {
+      if (context.direction === "bullish") votes.bullish += 1;
+      else if (context.direction === "bearish") votes.bearish += 1;
+      else votes.neutral += 1;
+      return votes;
+    },
+    { bullish: 0, bearish: 0, neutral: 0 },
+  );
+  const timeframeTotal = timeframeVotes.bullish + timeframeVotes.bearish + timeframeVotes.neutral;
+  const voteWidth = (count: number) => timeframeTotal > 0 ? `${(count / timeframeTotal) * 100}%` : "0%";
 
   async function runAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -159,6 +170,19 @@ export function TechnicalAnalysis() {
                 ) : null}
               </div>
               <span className={`analysis-consensus ${analysis.multi_timeframe.consensus}`}>{analysis.multi_timeframe.consensus}</span>
+            </div>
+            <div className="analysis-alignment" role="group" aria-label="Trend direction across available timeframes">
+              <div className="analysis-alignment-bar" aria-hidden="true">
+                <span className="bullish" style={{ width: voteWidth(timeframeVotes.bullish) }} />
+                <span className="bearish" style={{ width: voteWidth(timeframeVotes.bearish) }} />
+                <span className="neutral" style={{ width: voteWidth(timeframeVotes.neutral) }} />
+              </div>
+              <div className="analysis-alignment-legend">
+                <span><i className="bullish" />Bullish <strong>{timeframeVotes.bullish}</strong></span>
+                <span><i className="bearish" />Bearish <strong>{timeframeVotes.bearish}</strong></span>
+                <span><i className="neutral" />Neutral <strong>{timeframeVotes.neutral}</strong></span>
+                <small>{timeframeTotal} of 6 intervals available</small>
+              </div>
             </div>
             <div className="analysis-timeframes">
               {Object.entries(analysis.multi_timeframe.timeframes).map(([interval, context]) => (

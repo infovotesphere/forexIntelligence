@@ -48,6 +48,9 @@ export function PracticePositionsManager({ positions, onUpdated }: Props) {
   const [error, setError] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const selectedPositions = positions.filter((position) => selectedTickets.has(position.ticket));
+  const visibleActivePosition = activePosition
+    ? positions.find((position) => position.ticket === activePosition.ticket) ?? activePosition
+    : null;
 
   useEffect(() => () => {
     if (pressTimerRef.current !== null) window.clearTimeout(pressTimerRef.current);
@@ -95,6 +98,9 @@ export function PracticePositionsManager({ positions, onUpdated }: Props) {
       openActions(position);
     }
   }
+
+  const priceDigits = activePosition ? (activePosition.price_open.split(".")[1] ?? "").length : 2;
+  const priceStep = (10 ** -priceDigits).toString();
 
   async function modifyPosition(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -273,26 +279,36 @@ export function PracticePositionsManager({ positions, onUpdated }: Props) {
           setError("");
         }}
       >
-        {activePosition && (
+        {visibleActivePosition && (
           <>
             <header className="practice-position-dialog-header">
               <div>
-                <span className="practice-eyebrow">PRACTICE POSITION · {activePosition.ticket.slice(-8)}</span>
-                <h2 id="practice-position-title">{activePosition.direction} {activePosition.symbol}</h2>
-                <p>{activePosition.volume} lots · opened at {activePosition.price_open}</p>
+                <span className="practice-eyebrow">PRACTICE POSITION · {visibleActivePosition.ticket.slice(-8)}</span>
+                <h2 id="practice-position-title">{visibleActivePosition.direction} {visibleActivePosition.symbol}</h2>
+                <p>{visibleActivePosition.volume} lots · opened at {visibleActivePosition.price_open}</p>
               </div>
               <button type="button" className="practice-modal-close" aria-label="Close position actions" onClick={() => dialogRef.current?.close()}>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
               </button>
             </header>
             <div className="practice-position-summary">
-              <span>Current <strong>{activePosition.price_current}</strong></span>
-              <span className={Number(activePosition.profit) >= 0 ? "position-profit" : "position-loss"}>Floating P/L <strong>{activePosition.profit}</strong></span>
+              <span>Current <strong>{visibleActivePosition.price_current}</strong></span>
+              <span className={Number(visibleActivePosition.profit) >= 0 ? "position-profit" : "position-loss"}>Floating P/L <strong>{visibleActivePosition.profit}</strong></span>
             </div>
             <form className="practice-position-form" onSubmit={(event) => void modifyPosition(event)}>
               <div className="practice-position-fields">
-                <label><span>Stop loss <small>Leave blank to remove</small></span><input type="number" min="0" step="any" value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} placeholder="Not set" /></label>
-                <label><span>Take profit <small>Leave blank to remove</small></span><input type="number" min="0" step="any" value={takeProfit} onChange={(event) => setTakeProfit(event.target.value)} placeholder="Not set" /></label>
+                <label>
+                  <span>Stop loss <small>
+                    {visibleActivePosition.direction === "SELL" ? "Above current ask" : "Below current bid"} ({visibleActivePosition.price_current}) · blank removes
+                  </small></span>
+                  <input type="number" min="0" step={priceStep} value={stopLoss} onChange={(event) => setStopLoss(event.target.value)} placeholder="Not set" />
+                </label>
+                <label>
+                  <span>Take profit <small>
+                    {visibleActivePosition.direction === "SELL" ? "Below current ask" : "Above current bid"} ({visibleActivePosition.price_current}) · blank removes
+                  </small></span>
+                  <input type="number" min="0" step={priceStep} value={takeProfit} onChange={(event) => setTakeProfit(event.target.value)} placeholder="Not set" />
+                </label>
               </div>
               {error && <p className="error-text practice-position-error" role="alert">{error}</p>}
               <footer className="practice-position-actions">

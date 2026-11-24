@@ -6,6 +6,7 @@ import type {
   IPriceLine,
   ISeriesApi,
   ISeriesMarkersPluginApi,
+  AutoscaleInfoProvider,
   SeriesMarker,
   Time,
   UTCTimestamp,
@@ -46,22 +47,29 @@ type Props = {
   visibleCount: number;
   live?: boolean;
   positions?: PositionOverlay[];
+  entryTickSize?: string;
+  selectedEntryPrice?: string | null;
+  onEntryPriceSelect?: (price: string) => void;
+  onPositionLevelChange?: (ticket: string, stopLoss: string, takeProfit: string) => Promise<void>;
   timeframeOptions?: readonly string[];
   activeTimeframe?: string;
   onTimeframeChange?: (timeframe: string) => void;
 };
 
+type PositionLevel = "stop_loss" | "take_profit";
+type DragPreview = { ticket: string; level: PositionLevel; price: number };
+type PositionLevelRow = {
+  position: PositionOverlay;
+  field: PositionLevel;
+  isSet: boolean;
+  isDragging: boolean;
+  price: number;
+  y: number;
+  digits: number;
+};
+
 function toTimestamp(value: string): UTCTimestamp {
   return Math.floor(Date.parse(value) / 1000) as UTCTimestamp;
-}
-
-function sameCandle(left: ReplayCandle, right: ReplayCandle): boolean {
-  return left.time === right.time
-    && left.open === right.open
-    && left.high === right.high
-    && left.low === right.low
-    && left.close === right.close
-    && left.volume === right.volume;
 }
 
 export function CandlestickReplay({
@@ -70,6 +78,10 @@ export function CandlestickReplay({
   visibleCount,
   live = false,
   positions = [],
+  entryTickSize,
+  selectedEntryPrice,
+  onEntryPriceSelect,
+  onPositionLevelChange,
   timeframeOptions,
   activeTimeframe,
   onTimeframeChange,
@@ -81,11 +93,28 @@ export function CandlestickReplay({
   const positionLinesRef = useRef<IPriceLine[]>([]);
   const timeframeOptionsRef = useRef(timeframeOptions);
   const onTimeframeChangeRef = useRef(onTimeframeChange);
+  const liveRef = useRef(live);
+  const entryTickSizeRef = useRef(entryTickSize);
+  const onEntryPriceSelectRef = useRef(onEntryPriceSelect);
   const renderedRef = useRef<{ candles: ReplayCandle[]; visibleCount: number } | null>(null);
   const [chartReady, setChartReady] = useState(false);
   const [chartError, setChartError] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [timeframeMenuPoint, setTimeframeMenuPoint] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<DragPreview | null>(null);
+  const [dragError, setDragError] = useState("");
+  const [positionLevelRows, setPositionLevelRows] = useState<PositionLevelRow[]>([]);
+  const dragRef = useRef<{
+    pointerId: number;
+    position: PositionOverlay;
+    level: PositionLevel;
+    price: number;
+    moved: boolean;
+  } | null>(null);
+  const dragListenersRef = useRef<{
+    move: (event: PointerEvent) => void;
+    up: (event: PointerEvent) => void;
+  } | null>(null);
   const chartCandles = useMemo(() => candles.map((candle) => ({
     time: toTimestamp(candle.time),
     open: Number(candle.open),
@@ -93,6 +122,14 @@ export function CandlestickReplay({
     low: Number(candle.low),
     close: Number(candle.close),
   })), [candles]);
+
+  useEffect(() => {
+    liveRef.current = live;
+    entryTickSizeRef.current = entryTickSize;
+    onEntryPriceSelectRef.current = onEntryPriceSelect;
+    timeframeOptionsRef.current = timeframeOptions;
+    onTimeframeChangeRef.current = onTimeframeChange;
+  }, [live, entryTickSize, onEntryPriceSelect, timeframeOptions, onTimeframeChange]);
   const candleIndexes = useMemo(
     () => new Map(chartCandles.map((candle, index) => [Number(candle.time), index] as const)),
     [chartCandles],
@@ -148,6 +185,72 @@ export function CandlestickReplay({
     chartRef.current?.timeScale().fitContent();
   }
 
+  function startLevelDrag(event: React.PointerEvent<HTMLButtonElement>, position: PositionOverlay, level: PositionLevel) {
+    if (!onPositionLevelChange || position.source === "BROKER") return;
+    event.preventDefault();
+    event.stopPropagation();
+    setDragError("");
+
+    const previousListeners = dragListenersRef.current;
+    if (previousListeners) {
+      window.removeEventListener("pointermove", previousListeners.move);
+      window.removeEventListener("pointerup", previousListeners.up);
+      window.removeEventListener("pointercancel", previousListeners.up);
+    }
+
+    const currentPrice = Number(position.price_current);
+    const storedPrice = Number(position[level]);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      position,
+      level,
+      price: storedPrice > 0 ? storedPrice : currentPrice,
+      moved: false,
+    };
+    setDragPreview({
+      ticket: position.ticket,
+      level,
+      price: storedPrice > 0 ? storedPrice : currentPrice,
+    });
+
+    const move = (pointerEvent: PointerEvent) => {
+      const drag = dragRef.current;
+      const canvas = containerRef.current;
+      const series = candleSeriesRef.current;
+      if (!drag || pointerEvent.pointerId !== drag.pointerId || !canvas || !series) return;
+      const coordinate = pointerEvent.clientY - canvas.getBoundingClientRect().top;
+      const price = series.coordinateToPrice(coordinate);
+      if (price === null || !Number.isFinite(price)) return;
+      drag.price = price;
+      drag.moved = true;
+      setDragPreview({ ticket: drag.position.ticket, level: drag.level, price });
+    };
+    const finish = (pointerEvent: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag || pointerEvent.pointerId !== drag.pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      dragListenersRef.current = null;
+      dragRef.current = null;
+      setDragPreview(null);
+      if (!drag.moved) return;
+
+      const digits = (drag.position.price_open.split(".")[1] ?? "").length;
+      const price = drag.price.toFixed(digits);
+      const stopLoss = drag.level === "stop_loss" ? price : drag.position.stop_loss || "0";
+      const takeProfit = drag.level === "take_profit" ? price : drag.position.take_profit || "0";
+      void onPositionLevelChange(drag.position.ticket, stopLoss, takeProfit).catch((cause: unknown) => {
+        setDragError(cause instanceof Error ? cause.message : "The position level could not be updated");
+      });
+    };
+
+    dragListenersRef.current = { move, up: finish };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
+  }
+
   useEffect(() => {
     if (!isFullscreen) return;
     const previousOverflow = document.body.style.overflow;
@@ -161,6 +264,14 @@ export function CandlestickReplay({
       window.removeEventListener("keydown", exitFullscreen);
     };
   }, [isFullscreen]);
+
+  useEffect(() => () => {
+    const listeners = dragListenersRef.current;
+    if (!listeners) return;
+    window.removeEventListener("pointermove", listeners.move);
+    window.removeEventListener("pointerup", listeners.up);
+    window.removeEventListener("pointercancel", listeners.up);
+  }, []);
 
   useEffect(() => {
     if (!timeframeMenuPoint) return;
@@ -222,7 +333,19 @@ export function CandlestickReplay({
       candleSeriesRef.current = candleSeries;
       markersRef.current = createSeriesMarkers(candleSeries, []);
       chart.subscribeClick((event) => {
-        if (!timeframeOptionsRef.current?.length || !onTimeframeChangeRef.current || !event.point) return;
+        if (!event.point) return;
+        if (liveRef.current) {
+          const selectEntryPrice = onEntryPriceSelectRef.current;
+          if (!selectEntryPrice) return;
+          const price = candleSeries.coordinateToPrice(event.point.y);
+          if (price === null || !Number.isFinite(price) || price <= 0) return;
+          const tickSize = Number(entryTickSizeRef.current);
+          const step = Number.isFinite(tickSize) && tickSize > 0 ? tickSize : 0.00001;
+          const tickDecimals = entryTickSizeRef.current?.split(".")[1]?.length ?? 5;
+          selectEntryPrice((Math.round(price / step) * step).toFixed(tickDecimals));
+          return;
+        }
+        if (!timeframeOptionsRef.current?.length || !onTimeframeChangeRef.current) return;
         setTimeframeMenuPoint({
           x: event.point.x,
           y: event.point.y,
@@ -269,35 +392,22 @@ export function CandlestickReplay({
       const previousCandles = previous?.candles.slice(0, previous.visibleCount) ?? [];
       const visibleRange = chart.timeScale().getVisibleLogicalRange();
       const followsLatest = !visibleRange || visibleRange.to >= previousCandles.length - 2;
-      const unchangedBeforeLast = previousCandles.length > 0
-        && previousCandles.length <= candles.length
-        && previousCandles.slice(0, -1).every((candle, index) => sameCandle(candle, candles[index]));
-
       if (!previous) {
         candleSeries.setData(chartCandles);
         chart.timeScale().setVisibleLogicalRange({
           from: Math.max(0, chartCandles.length - 100),
           to: chartCandles.length + 8,
         });
-      } else if (
-        unchangedBeforeLast
-        && previousCandles.length === candles.length
-        && previousCandles.at(-1)?.time === candles.at(-1)?.time
-      ) {
-        if (!sameCandle(previousCandles[previousCandles.length - 1], candles[candles.length - 1])) {
-          candleSeries.update(chartCandles[chartCandles.length - 1]);
-        }
-      } else if (
-        unchangedBeforeLast
-        && candles.length === previousCandles.length + 1
-        && previousCandles.at(-1)?.time === candles.at(-2)?.time
-      ) {
-        candleSeries.update(chartCandles[chartCandles.length - 2]);
-        candleSeries.update(chartCandles[chartCandles.length - 1]);
-        if (followsLatest) chart.timeScale().scrollToRealTime();
       } else {
+        const previousLastTime = previousCandles.at(-1)?.time;
+        const latestTime = candles.at(-1)?.time;
+        const hasNewCandle = Boolean(previousLastTime && latestTime && latestTime !== previousLastTime);
         candleSeries.setData(chartCandles);
-        if (followsLatest) chart.timeScale().scrollToRealTime();
+        if (hasNewCandle && followsLatest) {
+          chart.timeScale().scrollToRealTime();
+        } else if (visibleRange) {
+          chart.timeScale().setVisibleLogicalRange(visibleRange);
+        }
       }
     } else if (previous?.candles === candles && visibleCount === previous.visibleCount + 1 && visibleCount > 0) {
       candleSeries.update(chartCandles[visibleCount - 1]);
@@ -311,7 +421,6 @@ export function CandlestickReplay({
       .map(({ marker }) => marker);
     markersRef.current?.setMarkers(visibleMarkers);
 
-    chart.timeScale().scrollToRealTime();
   }, [candles, chartCandles, chartMarkers, visibleCount, chartReady, live]);
 
   useEffect(() => {
@@ -320,18 +429,37 @@ export function CandlestickReplay({
     for (const line of positionLinesRef.current) series.removePriceLine(line);
     positionLinesRef.current = [];
 
+    const positionPrices = [
+      ...positions.flatMap((position) => [
+        Number(position.price_open),
+        Number(position.price_current),
+        ...(Number(position.stop_loss) > 0 ? [Number(position.stop_loss)] : []),
+        ...(Number(position.take_profit) > 0 ? [Number(position.take_profit)] : []),
+      ]),
+      Number(selectedEntryPrice),
+    ].filter((price) => Number.isFinite(price) && price > 0);
+    const autoscaleInfoProvider: AutoscaleInfoProvider = (baseImplementation) => {
+      const info = baseImplementation();
+      if (!info?.priceRange || positionPrices.length === 0) return info;
+      return {
+        ...info,
+        priceRange: {
+          minValue: Math.min(info.priceRange.minValue, ...positionPrices),
+          maxValue: Math.max(info.priceRange.maxValue, ...positionPrices),
+        },
+        margins: { above: 18, below: 18 },
+      };
+    };
+    series.applyOptions({
+      autoscaleInfoProvider,
+    });
+
     for (const position of positions) {
       const directionColor = position.direction === "BUY" ? "#61b8e4" : "#ed8d91";
       const sourceLabel = position.source === "BROKER" ? "BROKER" : "PRACTICE";
       const lines = [
-        { price: Number(position.price_open), title: `${sourceLabel} ${position.direction} ${position.volume} · OPEN`, color: directionColor, lineStyle: 2 },
-        { price: Number(position.price_current), title: `${sourceLabel} · LIVE ${position.profit}`, color: directionColor, lineStyle: 1 },
-        ...(Number(position.stop_loss) > 0
-          ? [{ price: Number(position.stop_loss), title: `${sourceLabel} SL · ${position.ticket.slice(-6)}`, color: "#ef6270", lineStyle: 2 }]
-          : []),
-        ...(Number(position.take_profit) > 0
-          ? [{ price: Number(position.take_profit), title: `${sourceLabel} TP · ${position.ticket.slice(-6)}`, color: "#2ac79a", lineStyle: 2 }]
-          : []),
+        { price: Number(position.price_open), title: `${sourceLabel} ${position.direction} ${position.volume} · ENTRY`, color: directionColor, lineStyle: 0 },
+        { price: Number(position.price_current), title: `${sourceLabel} · CURRENT ${position.profit}`, color: directionColor, lineStyle: 2 },
       ];
       for (const line of lines) {
         if (!Number.isFinite(line.price) || line.price <= 0) continue;
@@ -346,12 +474,78 @@ export function CandlestickReplay({
       }
     }
 
+    const entryPrice = Number(selectedEntryPrice);
+    if (Number.isFinite(entryPrice) && entryPrice > 0) {
+      positionLinesRef.current.push(series.createPriceLine({
+        price: entryPrice,
+        color: "#f4c95d",
+        lineWidth: 2,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: "SELECTED ENTRY",
+      }));
+    }
+
     return () => {
       if (candleSeriesRef.current !== series) return;
       for (const line of positionLinesRef.current) series.removePriceLine(line);
       positionLinesRef.current = [];
     };
-  }, [positions, chartReady]);
+  }, [positions, selectedEntryPrice, chartReady]);
+
+  useEffect(() => {
+    const series = candleSeriesRef.current;
+    if (!chartReady || !series || !onPositionLevelChange) {
+      setPositionLevelRows([]);
+      return;
+    }
+
+    const rows = positions.flatMap((position) => {
+      if (position.source === "BROKER") return [];
+      const levels: PositionLevel[] = ["stop_loss", "take_profit"];
+      return levels.flatMap((field) => {
+        const storedPrice = Number(position[field]);
+        const isSet = storedPrice > 0;
+        const isDragging = dragPreview?.ticket === position.ticket && dragPreview.level === field;
+        const price = isDragging ? dragPreview.price : isSet ? storedPrice : Number(position.price_current);
+        const y = series.priceToCoordinate(price);
+        if (y === null) return [];
+        return [{
+          position,
+          field,
+          isSet,
+          isDragging,
+          price,
+          y,
+          digits: (position.price_open.split(".")[1] ?? "").length,
+        }];
+      });
+    });
+    setPositionLevelRows(rows);
+  }, [positions, chartReady, onPositionLevelChange, dragPreview, candles, visibleCount]);
+
+  const positionLevelElements = positionLevelRows.map((row) => {
+    const label = row.field === "stop_loss" ? "SL" : "TP";
+    return (
+      <div
+        key={`${row.position.ticket}-${row.field}`}
+        className={`position-level-row position-level-${row.field}${row.isDragging ? " dragging" : ""}${!row.isSet ? " unset" : ""}`}
+        style={{ top: row.y, right: "64px" }}
+      >
+        <button
+          type="button"
+          className="position-level-handle"
+          aria-label={`${row.isSet ? "Drag" : "Drag to set"} ${label} for ${row.position.direction} ${row.position.symbol ?? ""} position`}
+          title={`${row.isSet ? "Drag to adjust" : "Drag to set"} ${label}`}
+          onPointerDown={(event) => startLevelDrag(event, row.position, row.field)}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {!row.isSet && !row.isDragging ? `+ ${label}` : `${label} ${row.price.toFixed(row.digits)} v`}
+        </button>
+        {(row.isSet || row.isDragging) && <span className="position-level-rule" aria-hidden="true" />}
+      </div>
+    );
+  });
 
   const currentCandle = candles[Math.max(0, visibleCount - 1)];
   const timeframeMenuCenter = timeframeMenuPoint
@@ -367,7 +561,9 @@ export function CandlestickReplay({
         <div className="replay-chart-heading">
           <div className="replay-chart-context">
             <strong>{new Date(currentCandle.time).toLocaleString()}</strong>
-            <span>Scroll or pinch to zoom · drag to pan</span>
+            <span>{live
+              ? "Click chart to select an entry price · drag SL/TP levels to adjust"
+              : "Scroll or pinch to zoom · drag to pan"}</span>
           </div>
           <div className="replay-ohlc">
             <span>O {currentCandle.open}</span>
@@ -385,11 +581,17 @@ export function CandlestickReplay({
           </div>
         </div>
       )}
+      {dragError && <p className="error-text position-drag-error" role="alert">{dragError}</p>}
       {chartError ? (
         <p className="error-text" role="alert">Candlestick chart unavailable: {chartError}</p>
       ) : (
         <div className="replay-chart-canvas" ref={containerRef} aria-label={live ? "Live market candlestick chart" : "Historical candlestick replay chart"}>
-          {timeframeMenuPoint && timeframeOptions?.length && onTimeframeChange && (
+          {live && positionLevelElements.length > 0 && (
+            <div className="position-level-overlay" aria-label="Draggable practice stop and target levels">
+              {positionLevelElements}
+            </div>
+          )}
+          {!live && timeframeMenuPoint && timeframeOptions?.length && onTimeframeChange && (
             <div className="chart-timeframe-radial" role="group" aria-label="Quick timeframe selector">
               {timeframeMenuCenter && timeframeOptions.map((timeframe, index) => {
                 const angle = -Math.PI / 2 + (index * Math.PI * 2) / timeframeOptions.length;

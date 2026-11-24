@@ -1,9 +1,11 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.testclient import TestClient
-from shared.contracts.broker import Tick
+from shared.contracts.broker import Candle, Tick
 from app.api.v1 import broker as broker_api
+import app.core.broker as broker_core
+import app.core.persistent_runtime as persistent_runtime
 from app.core.auth import AUTH_COOKIE_NAME
 from app.core.broker import simulation_adapter
 from app.main import app
@@ -41,23 +43,244 @@ def test_account_and_market_endpoints():
     assert eurusd["simulated"] is True
 
 
-def test_market_candle_endpoint_returns_simulated_preview_without_broker(monkeypatch):
-    previous_runtime = runtime_store.state
-    monkeypatch.setattr(runtime_store, "state", RuntimeState())
+def test_simulation_chart_uses_real_market_ohlc(monkeypatch):
+    now = datetime.now(UTC)
+    candle = Candle(
+        symbol="EURUSD",
+        timeframe="M5",
+        time=now,
+        open=Decimal("1.09000"),
+        high=Decimal("1.09100"),
+        low=Decimal("1.08900"),
+        close=Decimal("1.09050"),
+        volume=Decimal("100"),
+    )
+    monkeypatch.setattr(runtime_store, "state", RuntimeState(broker="simulation", mt5_connected=True))
+    monkeypatch.setattr(broker_core, "_simulation_market_ticks", {})
+    monkeypatch.setattr(broker_api, "get_real_market_candles", lambda *_args, **_kwargs: [candle])
+
+    response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "EURUSD"
+    assert body["data_source"] == "real_market"
+    assert body["simulated"] is True
+    assert body["candles"][-1]["close"] == "1.09050"
+
+
+def test_real_market_chart_quote_is_used_to_open_and_protect_simulated_positions(monkeypatch):
+    now = datetime.now(UTC)
+    candle = Candle(
+        symbol="EURUSD",
+        timeframe="M5",
+        time=now,
+        open=Decimal("1.09000"),
+        high=Decimal("1.09100"),
+        low=Decimal("1.08900"),
+        close=Decimal("1.09050"),
+        volume=Decimal("100"),
+    )
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(runtime_store, "state", RuntimeState(broker="simulation"))
+    monkeypatch.setattr(broker_core, "_simulation_market_ticks", {})
+    monkeypatch.setattr(broker_api, "get_real_market_candles", lambda *_args, **_kwargs: [candle])
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
 
     try:
-        response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+        candles = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+        tick = simulation_adapter.get_tick("EURUSD")
+        opened = client.post(
+            "/api/v1/practice/orders",
+            json={"symbol": "EURUSD", "direction": "BUY", "volume": "0.01"},
+        )
+        assert candles.status_code == 200
+        assert tick.bid == Decimal("1.09045")
+        assert tick.ask == Decimal("1.09055")
+        assert opened.status_code == 200
+        assert opened.json()["position"]["price_open"] == "1.09055"
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["symbol"] == "EURUSD"
-        assert body["timeframe"] == "M5"
-        assert body["data_source"] == "simulation"
-        assert body["simulated"] is True
-        assert len(body["candles"]) == 30
-        assert set(body["candles"][0]) == {"time", "open", "high", "low", "close", "volume"}
+        modified = client.patch(
+            f"/api/v1/practice/positions/{opened.json()['position']['ticket']}",
+            json={"stop_loss": "1.09000", "take_profit": "1.09100"},
+        )
+
+        assert modified.status_code == 200
+        assert modified.json()["position"]["stop_loss"] == "1.09000"
+        assert modified.json()["position"]["take_profit"] == "1.09100"
     finally:
-        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_sell_position_accepts_protection_on_the_correct_side_of_the_current_ask(monkeypatch):
+    now = datetime.now(UTC)
+    candle = Candle(
+        symbol="XAUUSD",
+        timeframe="M5",
+        time=now,
+        open=Decimal("3622.30"),
+        high=Decimal("3622.80"),
+        low=Decimal("3622.10"),
+        close=Decimal("3622.50"),
+        volume=Decimal("100"),
+    )
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "closed_deals": []})
+    monkeypatch.setattr(runtime_store, "state", RuntimeState(broker="simulation"))
+    monkeypatch.setattr(broker_core, "_simulation_market_ticks", {})
+    monkeypatch.setattr(broker_api, "get_real_market_candles", lambda *_args, **_kwargs: [candle])
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: None)
+
+    try:
+        client.get("/api/v1/markets/XAUUSD/candles?timeframe=M5&limit=30")
+        opened = client.post(
+            "/api/v1/practice/orders",
+            json={"symbol": "XAUUSD", "direction": "SELL", "volume": "0.01"},
+        )
+        ticket = opened.json()["position"]["ticket"]
+
+        accepted = client.patch(
+            f"/api/v1/practice/positions/{ticket}",
+            json={"stop_loss": "3623.00", "take_profit": "3621.00"},
+        )
+        assert accepted.status_code == 200
+
+        crossed = client.patch(
+            f"/api/v1/practice/positions/{ticket}",
+            json={"stop_loss": "3622.55", "take_profit": "3621.00"},
+        )
+        assert crossed.status_code == 422
+        assert crossed.json()["detail"] == "Stop loss for SELL must be above current ask (3622.55)"
+    finally:
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_simulation_chart_does_not_fall_back_to_generated_prices_when_market_data_fails(monkeypatch):
+    monkeypatch.setattr(runtime_store, "state", RuntimeState(broker="simulation"))
+
+    def unavailable(*_args, **_kwargs):
+        raise RuntimeError("Market provider unavailable")
+
+    monkeypatch.setattr(broker_api, "get_real_market_candles", unavailable)
+
+    response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Market provider unavailable"
+
+
+def test_mt5_market_candles_and_practice_quotes_use_the_live_broker_quote(monkeypatch):
+    now = datetime.now(UTC)
+    interval_seconds = 5 * 60
+    candle_time = datetime.fromtimestamp(int(now.timestamp() // interval_seconds) * interval_seconds, UTC)
+    history = [
+        Candle(
+            symbol="EURUSD",
+            timeframe="M5",
+            time=candle_time,
+            open=Decimal("1.09000"),
+            high=Decimal("1.09100"),
+            low=Decimal("1.08900"),
+            close=Decimal("1.09050"),
+            volume=Decimal("100"),
+        ),
+    ]
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(
+            broker="mt5",
+            mt5_connected=True,
+            account_id="123456",
+            worker_last_seen=now,
+            market_data=({
+                "base_symbol": "EURUSD",
+                "symbol": "EURUSDm",
+                "bid": "1.10000",
+                "ask": "1.10020",
+                "time": now.isoformat(),
+            },),
+        ),
+    )
+    monkeypatch.setattr(broker_api, "get_mt5_candles", lambda *_args: ("EURUSDm", list(history)))
+    monkeypatch.setattr(
+        broker_api,
+        "get_live_mt5_tick",
+        lambda _symbol: Tick("EURUSD", Decimal("1.10000"), Decimal("1.10020"), now),
+    )
+
+    response = client.get("/api/v1/markets/EURUSD/candles?timeframe=M5&limit=30")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["symbol"] == "EURUSDm"
+    assert body["data_source"] == "mt5"
+    assert body["simulated"] is False
+    latest = body["candles"][-1]
+    assert latest["close"] == "1.10010"
+    assert latest["high"] == "1.10020"
+    assert latest["low"] == "1.08900"
+
+
+def test_practice_adapter_uses_mt5_quotes_when_the_broker_is_connected(monkeypatch):
+    now = datetime.now(UTC)
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(
+            broker="mt5",
+            mt5_connected=True,
+            worker_last_seen=now,
+            market_data=({
+                "base_symbol": "EURUSD",
+                "symbol": "EURUSDm",
+                "bid": "1.10000",
+                "ask": "1.10020",
+                "time": now.isoformat(),
+            },),
+        ),
+    )
+
+    tick = simulation_adapter.get_tick("EURUSD")
+
+    assert tick.bid == Decimal("1.10000")
+    assert tick.ask == Decimal("1.10020")
+    assert tick.time == now
+    response = client.get("/api/v1/practice/markets")
+    assert response.status_code == 200
+    quotes = response.json()
+    assert len(quotes) == 1
+    assert quotes[0]["symbol"] == "EURUSD"
+    assert quotes[0]["bid"] == "1.10000"
+    assert quotes[0]["simulated"] is False
+
+
+def test_practice_adapter_rejects_stale_mt5_quotes_without_simulation_fallback(monkeypatch):
+    now = datetime.now(UTC)
+    monkeypatch.setattr(
+        runtime_store,
+        "state",
+        RuntimeState(
+            broker="mt5",
+            mt5_connected=True,
+            worker_last_seen=now,
+            market_data=({
+                "base_symbol": "EURUSD",
+                "symbol": "EURUSDm",
+                "bid": "1.10000",
+                "ask": "1.10020",
+                "time": (now - timedelta(minutes=1)).isoformat(),
+            },),
+        ),
+    )
+
+    try:
+        simulation_adapter.get_tick("EURUSD")
+    except RuntimeError as error:
+        assert "stale" in str(error)
+    else:
+        raise AssertionError("A stale MT5 quote must not fall back to simulated pricing")
 
 
 def test_market_candle_endpoint_does_not_fallback_when_mt5_candles_are_missing(monkeypatch):
@@ -149,6 +372,16 @@ def test_simulation_practice_trade_can_open_and_close_without_broker_orders(monk
         assert position["direction"] == "BUY"
         assert Decimal(position["price_open"]) == Decimal("1.10010")
 
+        open_history = client.get("/api/v1/history").json()
+        assert open_history["total"] == 1
+        assert open_history["items"][0]["deal_type"] == "ENTRY"
+        persisted_book = simulation_adapter.export_state()
+        simulation_adapter.restore_state({"balance": "10000", "positions": [], "deals": []})
+        simulation_adapter.restore_state(persisted_book)
+        restored_history = client.get("/api/v1/history").json()
+        assert restored_history["total"] == 1
+        assert restored_history["items"][0]["order"] == position["ticket"]
+
         repeated = client.post(
             "/api/v1/orders",
             json={
@@ -173,8 +406,99 @@ def test_simulation_practice_trade_can_open_and_close_without_broker_orders(monk
 
         history = client.get("/api/v1/history").json()
         assert history["simulated"] is True
-        assert history["total"] == 1
+        assert history["total"] == 2
+        assert history["items"][0]["deal_type"] == "EXIT"
+        assert history["items"][1]["deal_type"] == "ENTRY"
         assert history["items"][0]["order"] == position["ticket"]
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_open_practice_trade_history_survives_runtime_restore(monkeypatch):
+    class MemoryRedis:
+        values: dict[str, str] = {}
+
+        def set(self, key: str, value: str, ex: int) -> bool:
+            self.values[key] = value
+            return True
+
+        def get(self, key: str) -> str | None:
+            return self.values.get(key)
+
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    simulation_adapter.restore_state({"balance": "10000", "positions": [], "deals": []})
+    runtime_store.connect_demo()
+    monkeypatch.setattr(persistent_runtime.Redis, "from_url", lambda *_args, **_kwargs: MemoryRedis())
+    monkeypatch.setattr(
+        simulation_adapter,
+        "get_tick",
+        lambda symbol: Tick(
+            symbol=symbol,
+            bid=Decimal("1.10000"),
+            ask=Decimal("1.10010"),
+            time=datetime.now(UTC),
+        ),
+    )
+
+    try:
+        opened = client.post(
+            "/api/v1/practice/orders",
+            json={"symbol": "EURUSD", "direction": "BUY", "volume": "0.01"},
+        )
+        assert opened.status_code == 200
+
+        simulation_adapter.restore_state({"balance": "10000", "positions": [], "deals": []})
+        runtime_store.state = RuntimeState()
+        persistent_runtime.restore_runtime_state()
+
+        history = client.get("/api/v1/history")
+        assert history.status_code == 200
+        assert history.json()["total"] == 1
+        assert history.json()["items"][0]["deal_type"] == "ENTRY"
+    finally:
+        runtime_store.state = previous_runtime
+        simulation_adapter.restore_state(previous_book)
+
+
+def test_history_backfills_and_persists_entry_for_legacy_open_practice_position(monkeypatch):
+    previous_runtime = runtime_store.state
+    previous_book = simulation_adapter.export_state()
+    opened_at = datetime.now(UTC).isoformat()
+    simulation_adapter.restore_state({
+        "balance": "10000",
+        "positions": [{
+            "ticket": "SIM-LEGACY",
+            "symbol": "EURUSD",
+            "direction": "BUY",
+            "volume": "0.01",
+            "price_open": "1.10010",
+            "price_current": "1.10000",
+            "profit": "-0.01",
+            "stop_loss": "0",
+            "take_profit": "0",
+            "initial_risk": "0",
+            "open_time": opened_at,
+            "simulated": True,
+        }],
+        "closed_deals": [],
+    })
+    monkeypatch.setattr(runtime_store, "state", RuntimeState(broker="simulation", mt5_connected=True))
+    saves: list[dict] = []
+    monkeypatch.setattr(broker_api, "save_runtime_state", lambda: saves.append(simulation_adapter.export_state()))
+
+    try:
+        history = client.get("/api/v1/history")
+        repeated = client.get("/api/v1/history")
+
+        assert history.status_code == 200
+        assert history.json()["total"] == 1
+        assert history.json()["items"][0]["deal_type"] == "ENTRY"
+        assert history.json()["items"][0]["time"] == opened_at
+        assert repeated.json()["total"] == 1
+        assert len(saves) == 1
+        assert saves[0]["deals"][0]["order"] == "SIM-LEGACY"
     finally:
         runtime_store.state = previous_runtime
         simulation_adapter.restore_state(previous_book)
@@ -232,7 +556,9 @@ def test_practice_account_works_without_broker_connection(monkeypatch):
 
         closed = client.post(f"/api/v1/practice/positions/{opened.json()['position']['ticket']}/close")
         assert closed.status_code == 200
-        assert client.get("/api/v1/practice/history").json()["total"] == 1
+        practice_history = client.get("/api/v1/practice/history").json()
+        assert practice_history["total"] == 2
+        assert [deal["deal_type"] for deal in practice_history["items"]] == ["EXIT", "ENTRY"]
 
         missing_stop_price = client.post(
             "/api/v1/practice/orders",

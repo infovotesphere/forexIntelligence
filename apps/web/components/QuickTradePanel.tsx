@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { startVisiblePolling } from "@/services/polling";
+import { usePracticeVolume } from "@/services/practiceTradePreferences";
 
 type Props = {
   symbol: string;
@@ -64,7 +65,7 @@ function parseMarkets(value: unknown): MarketQuote[] | null {
 
 export function QuickTradePanel({ symbol, onSubmitted }: Props) {
   const [markets, setMarkets] = useState<MarketQuote[]>([]);
-  const [volume, setVolume] = useState("0.01");
+  const { volume, setVolume } = usePracticeVolume();
   const [busySide, setBusySide] = useState<"BUY" | "SELL" | null>(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");

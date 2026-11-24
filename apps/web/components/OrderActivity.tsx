@@ -39,6 +39,7 @@ type Deal = {
   net_profit: string;
   time: string;
   simulated?: boolean;
+  deal_type?: "ENTRY" | "EXIT";
 };
 
 type HistoryResponse = {
@@ -75,11 +76,14 @@ type PracticeHistoryResponse = {
   total: number;
 };
 
+type ActivitySection = "practice" | "pending" | "broker" | "practice-history" | "broker-history";
+
 export function OrderActivity() {
   const [positions, setPositions] = useState<PositionResponse | null>(null);
   const [history, setHistory] = useState<HistoryResponse | null>(null);
   const [practicePositions, setPracticePositions] = useState<PracticePositionsResponse | null>(null);
   const [practiceHistory, setPracticeHistory] = useState<PracticeHistoryResponse | null>(null);
+  const [activeSection, setActiveSection] = useState<ActivitySection>("practice");
   const [error, setError] = useState("");
   const [busyTicket, setBusyTicket] = useState("");
   const [refreshVersion, setRefreshVersion] = useState(0);
@@ -157,13 +161,35 @@ export function OrderActivity() {
     .filter((deal) => !deal.simulated)
     .sort((a, b) => Date.parse(b.time) - Date.parse(a.time));
   const simulated = (positions?.simulated ?? history?.simulated ?? true);
+  const activitySections: { id: ActivitySection; label: string; count: number }[] = [
+    { id: "practice", label: "Practice positions", count: practicePositions?.total ?? 0 },
+    { id: "pending", label: "Pending orders", count: practicePositions?.pending_total ?? 0 },
+    { id: "broker", label: "Broker positions", count: openPositions.length },
+    { id: "practice-history", label: "Practice history", count: practiceHistory?.total ?? 0 },
+    { id: "broker-history", label: "Broker history", count: deals.length },
+  ];
 
   return (
-    <div>
+    <div className="order-activity">
       <SimulationTradeTicket
         onSubmitted={() => setRefreshVersion((version) => version + 1)}
       />
-      <section className="card history-panel">
+      <nav className="activity-tabs" aria-label="Order activity sections">
+        {activitySections.map((section) => (
+          <button
+            key={section.id}
+            className={`activity-tab${activeSection === section.id ? " activity-tab-active" : ""}`}
+            type="button"
+            aria-pressed={activeSection === section.id}
+            onClick={() => setActiveSection(section.id)}
+          >
+            <span>{section.label}</span>
+            <span className="activity-tab-count">{section.count}</span>
+          </button>
+        ))}
+      </nav>
+      {error && <p className="error-text history-error" role="alert">{error}</p>}
+      <section className="card history-panel" hidden={activeSection !== "broker"}>
         <div className="history-toolbar">
           <div>
             <strong>{positions?.connected ? `${openPositions.length} open ${openPositions.length === 1 ? "position" : "positions"}` : "Broker disconnected"}</strong>
@@ -173,7 +199,6 @@ export function OrderActivity() {
             {simulated ? "SIMULATION" : "MT5 · READ ONLY"}
           </span>
         </div>
-        {error && <p className="error-text history-error" role="alert">{error}</p>}
         {!positions?.connected ? (
           <div className="empty history-empty">Connect an account to read open order activity.</div>
         ) : openPositions.length === 0 ? (
@@ -204,7 +229,7 @@ export function OrderActivity() {
         )}
       </section>
 
-      <section className="card history-panel" style={{ marginTop: 12 }}>
+      <section className="card history-panel" hidden={activeSection !== "practice"}>
         <div className="history-toolbar">
           <div>
             <strong>{practicePositions?.account.currency ?? "USD"} {practicePositions?.account.balance ?? "—"} practice balance</strong>
@@ -248,7 +273,7 @@ export function OrderActivity() {
         )}
       </section>
 
-      <section className="card history-panel" style={{ marginTop: 12 }}>
+      <section className="card history-panel" hidden={activeSection !== "pending"}>
         <div className="history-toolbar">
           <div>
             <strong>{practicePositions?.pending_total ?? 0} pending stop orders</strong>
@@ -287,7 +312,7 @@ export function OrderActivity() {
         )}
       </section>
 
-      <section className="card history-panel" style={{ marginTop: 12 }}>
+      <section className="card history-panel" hidden={activeSection !== "broker-history"}>
         <div className="history-toolbar">
           <div>
             <strong>{history?.connected ? `${deals.length} completed broker deals` : "Completed broker activity unavailable"}</strong>
@@ -323,21 +348,21 @@ export function OrderActivity() {
         )}
       </section>
 
-      <section className="card history-panel" style={{ marginTop: 12 }}>
+      <section className="card history-panel" hidden={activeSection !== "practice-history"}>
         <div className="history-toolbar">
           <div>
-            <strong>{practiceHistory?.total ?? 0} completed practice trades</strong>
-            <p>Virtual executions · isolated from broker activity</p>
+            <strong>{practiceHistory?.total ?? 0} practice trade events</strong>
+            <p>Virtual entries and exits · isolated from broker activity</p>
           </div>
         </div>
         {!practiceHistory ? (
           <div className="empty history-empty">Loading practice history…</div>
         ) : practiceHistory.items.length === 0 ? (
-          <div className="empty history-empty">Closed practice trades will appear here.</div>
+          <div className="empty history-empty">Placed practice trades will appear here as entry and exit events.</div>
         ) : (
           <div className="history-table-wrap">
             <table className="table history-table">
-              <thead><tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr></thead>
+              <thead><tr><th>Time</th><th>Deal</th><th>Order</th><th>Instrument</th><th>Side</th><th>Execution</th><th>Volume</th><th>Price</th><th>Net P/L</th></tr></thead>
               <tbody>
                 {practiceHistory.items.map((deal) => (
                   <tr key={deal.ticket}>
@@ -346,6 +371,7 @@ export function OrderActivity() {
                     <td>{deal.order || "—"}</td>
                     <td><strong>{deal.symbol || "—"}</strong></td>
                     <td>{deal.direction}</td>
+                    <td>{deal.deal_type ?? "DEAL"}</td>
                     <td>{deal.volume}</td>
                     <td>{deal.price}</td>
                     <td className={Number(deal.net_profit) >= 0 ? "position-profit" : "position-loss"}>{deal.net_profit}</td>

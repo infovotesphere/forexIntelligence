@@ -1,5 +1,6 @@
-from datetime import UTC, datetime, timedelta
+from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import hashlib
 import math
@@ -62,6 +63,7 @@ class SimulationAdapter(BrokerConnector):
 
     def __init__(self) -> None:
         self._connected = False
+        self._tick_provider: Callable[[str], Tick | None] | None = None
         self._account = AccountInfo(
             account_id="SIM-DEMO-001",
             broker="Simulation",
@@ -78,7 +80,7 @@ class SimulationAdapter(BrokerConnector):
         self._submitted: dict[str, BrokerResponse] = {}
         self._positions: dict[str, dict] = {}
         self._pending_orders: dict[str, dict] = {}
-        self._closed_deals: list[dict] = []
+        self._deals: list[dict] = []
 
     def connect(self) -> bool:
         self._connected = True
@@ -86,6 +88,9 @@ class SimulationAdapter(BrokerConnector):
 
     def disconnect(self) -> None:
         self._connected = False
+
+    def set_tick_provider(self, provider: Callable[[str], Tick | None] | None) -> None:
+        self._tick_provider = provider
 
     def connection_status(self) -> dict:
         return {"connected": self._connected, "environment": "simulation", "simulated": True}
@@ -138,6 +143,10 @@ class SimulationAdapter(BrokerConnector):
 
     def get_tick(self, symbol: str) -> Tick:
         self._require_connection()
+        if self._tick_provider is not None:
+            tick = self._tick_provider(symbol)
+            if tick is not None:
+                return tick
         info = self.get_symbol_info(symbol)
         seed = int(hashlib.sha256(f"{symbol}:{datetime.now(UTC).replace(microsecond=0)}".encode()).hexdigest()[:8], 16)
         base = self.REFERENCE_PRICES[symbol]
@@ -190,6 +199,7 @@ class SimulationAdapter(BrokerConnector):
         self._require_connection()
         positions = []
         for ticket, position in list(self._positions.items()):
+            self._record_entry_deal(position)
             tick = self.get_tick(position["symbol"])
             close_price = tick.bid if position["direction"] == "BUY" else tick.ask
             stop_loss = Decimal(position["stop_loss"])
@@ -407,7 +417,28 @@ class SimulationAdapter(BrokerConnector):
             "simulated": True,
         }
         self._positions[broker_id] = position
+        self._record_entry_deal(position)
         return dict(position)
+
+    def _record_entry_deal(self, position: dict) -> None:
+        order = str(position["ticket"])
+        if any(deal.get("order") == order and deal.get("deal_type") == "ENTRY" for deal in self._deals):
+            return
+        self._deals.append({
+            "ticket": f"{order}-OPEN",
+            "order": order,
+            "symbol": position["symbol"],
+            "direction": position["direction"],
+            "volume": str(position["volume"]),
+            "price": str(position["price_open"]),
+            "profit": "0",
+            "commission": "0",
+            "swap": "0",
+            "net_profit": "0",
+            "time": str(position.get("open_time") or datetime.now(UTC).isoformat()),
+            "simulated": True,
+            "deal_type": "ENTRY",
+        })
 
     def close_position(self, ticket: str) -> dict:
         self._require_connection()
@@ -466,12 +497,14 @@ class SimulationAdapter(BrokerConnector):
             (position["direction"] == "BUY" and stop_loss >= exit_quote)
             or (position["direction"] == "SELL" and stop_loss <= exit_quote)
         ):
-            raise ValueError("Stop loss must be beyond the current price in the loss direction")
+            comparison = "below current bid" if position["direction"] == "BUY" else "above current ask"
+            raise ValueError(f"Stop loss for {position['direction']} must be {comparison} ({exit_quote})")
         if take_profit > 0 and (
             (position["direction"] == "BUY" and take_profit <= exit_quote)
             or (position["direction"] == "SELL" and take_profit >= exit_quote)
         ):
-            raise ValueError("Take profit must be beyond the current price in the profit direction")
+            comparison = "above current bid" if position["direction"] == "BUY" else "below current ask"
+            raise ValueError(f"Take profit for {position['direction']} must be {comparison} ({exit_quote})")
 
         parsed_stop_loss = stop_loss if stop_loss > 0 else None
         trade_risk = (
@@ -508,14 +541,16 @@ class SimulationAdapter(BrokerConnector):
 
     def get_deal_history(self) -> list[dict]:
         self._require_connection()
-        return [dict(deal) for deal in reversed(self._closed_deals)]
+        for position in self._positions.values():
+            self._record_entry_deal(position)
+        return [dict(deal) for deal in reversed(self._deals)]
 
     def export_state(self) -> dict:
         return {
             "balance": str(self._balance),
             "positions": [dict(position) for position in self._positions.values()],
             "pending_orders": [dict(order) for order in self._pending_orders.values()],
-            "closed_deals": [dict(deal) for deal in self._closed_deals],
+            "deals": [dict(deal) for deal in self._deals],
         }
 
     def restore_state(self, state: dict) -> None:
@@ -525,12 +560,12 @@ class SimulationAdapter(BrokerConnector):
             balance = Decimal(str(state.get("balance", "10000")))
             positions = state.get("positions", [])
             pending_orders = state.get("pending_orders", [])
-            closed_deals = state.get("closed_deals", [])
+            deals = state.get("deals", state.get("closed_deals", []))
             if (
                 balance <= 0
                 or not isinstance(positions, list)
                 or not isinstance(pending_orders, list)
-                or not isinstance(closed_deals, list)
+                or not isinstance(deals, list)
             ):
                 return
             self._balance = balance
@@ -548,7 +583,7 @@ class SimulationAdapter(BrokerConnector):
                 and order.get("order_type") in {"BUY_STOP", "SELL_STOP"}
                 and order.get("idempotency_key")
             }
-            self._closed_deals = [dict(deal) for deal in closed_deals if isinstance(deal, dict)]
+            self._deals = [dict(deal) for deal in deals if isinstance(deal, dict)]
         except (ArithmeticError, KeyError, TypeError, ValueError):
             return
 
@@ -587,9 +622,10 @@ class SimulationAdapter(BrokerConnector):
             "net_profit": str(profit),
             "time": datetime.now(UTC).isoformat(),
             "simulated": True,
+            "deal_type": "EXIT",
             "close_reason": reason,
         }
-        self._closed_deals.append(deal)
+        self._deals.append(deal)
         return dict(deal)
 
     def _require_connection(self) -> None:

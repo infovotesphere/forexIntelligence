@@ -35,6 +35,7 @@ type PositionResponse = {
 type MarketInstrument = {
   symbol: string;
   base_symbol?: string;
+  tick_size?: string;
 };
 
 type PendingOrder = {
@@ -58,6 +59,11 @@ type PracticePositionsResponse = {
 
 const practiceSymbols: ReadonlySet<string> = new Set(instrumentGroups.flatMap((group) => group.symbols));
 
+function formatAccountAmount(value: string | number | undefined, currency: string | undefined): string {
+  if (value === undefined || !Number.isFinite(Number(value))) return "—";
+  return `${currency ?? "USD"} ${Number(value).toFixed(2)}`;
+}
+
 export function PositionsTable() {
   const [data, setData] = useState<PositionResponse | null>(null);
   const [markets, setMarkets] = useState<MarketInstrument[]>([]);
@@ -65,6 +71,7 @@ export function PositionsTable() {
   const [error, setError] = useState("");
   const [practiceError, setPracticeError] = useState("");
   const { symbol: selectedSymbol, setSymbol: setSelectedSymbol, ready: selectionReady, hasSavedSelection } = useInstrumentSelection();
+  const [selectedEntry, setSelectedEntry] = useState<{ symbol: string; price: string } | null>(null);
   const [refreshVersion, setRefreshVersion] = useState(0);
 
   useEffect(() => {
@@ -130,6 +137,14 @@ export function PositionsTable() {
 
   const simulated = data?.simulated ?? true;
   const chartOptions = chartSymbols.length ? chartSymbols : [selectedSymbol];
+  const selectedChartMarket = markets.find(
+    (market) => (market.base_symbol ?? market.symbol).toUpperCase() === selectedSymbol.toUpperCase(),
+  );
+  const chartEntryPrice = selectedEntry?.symbol === selectedSymbol ? selectedEntry.price : null;
+  const practiceProfitValues = practice?.items.map((position) => Number(position.profit));
+  const practiceProfit = practiceProfitValues?.every(Number.isFinite)
+    ? practiceProfitValues.reduce((total, value) => total + value, 0)
+    : undefined;
   const canPracticeSelectedSymbol = practiceSymbols.has(selectedSymbol.toUpperCase());
   const chartPositions = useMemo(() => [
     ...(practice?.items ?? [])
@@ -146,13 +161,60 @@ export function PositionsTable() {
       .map((position) => ({ ...position, source: "BROKER" as const })) : []),
   ], [data?.simulated, markets, positions, practice?.items, selectedSymbol]);
 
+  async function updateChartPosition(ticket: string, stopLoss: string, takeProfit: string) {
+    const position = practice?.items.find((item) => item.ticket === ticket);
+    if (!position) throw new Error("The practice position is no longer open");
+    const response = await fetch(`/api/v1/practice/positions/${encodeURIComponent(ticket)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ stop_loss: stopLoss, take_profit: takeProfit }),
+    });
+    const payload: unknown = await response.json().catch(() => null);
+    if (!response.ok) {
+      const detail = typeof payload === "object" && payload !== null && "detail" in payload
+        && typeof payload.detail === "string"
+        ? payload.detail
+        : "The position level could not be updated";
+      throw new Error(detail);
+    }
+    setRefreshVersion((version) => version + 1);
+  }
+
   return (
     <div className="positions-workspace">
+      <section className="grid metrics positions-summary" aria-label="Practice account snapshot">
+        <article className="card metric">
+          <div className="metric-label">Practice equity</div>
+          <div className="metric-value">{formatAccountAmount(practice?.account.equity, practice?.account.currency)}</div>
+          <small>Balance {formatAccountAmount(practice?.account.balance, practice?.account.currency)}</small>
+        </article>
+        <article className="card metric">
+          <div className="metric-label">Floating practice P/L</div>
+          <div className={`metric-value ${practiceProfit === undefined ? "" : practiceProfit >= 0 ? "position-profit" : "position-loss"}`}>
+            {formatAccountAmount(practiceProfit, practice?.account.currency)}
+          </div>
+          <small>Across open virtual positions</small>
+        </article>
+        <article className="card metric">
+          <div className="metric-label">Open practice positions</div>
+          <div className="metric-value">{practice?.total ?? "—"}</div>
+          <small>Independent of broker positions</small>
+        </article>
+        <article className="card metric">
+          <div className="metric-label">Pending stop orders</div>
+          <div className="metric-value">{practice?.pending_total ?? "—"}</div>
+          <small>Virtual orders awaiting a trigger</small>
+        </article>
+      </section>
       <div className="positions-terminal">
         <LiveMarketChart
           symbol={selectedSymbol}
           symbols={chartOptions}
           positions={chartPositions}
+          entryTickSize={selectedChartMarket?.tick_size ?? "0.00001"}
+          selectedEntryPrice={chartEntryPrice}
+          onEntryPriceSelect={(price) => setSelectedEntry({ symbol: selectedSymbol, price })}
+          onPositionLevelChange={updateChartPosition}
           onSymbolChange={(symbol) => {
             setSelectedSymbol(symbol);
           }}
@@ -171,6 +233,7 @@ export function PositionsTable() {
               <SimulationTradeTicket
                 key={selectedSymbol}
                 initialSymbol={selectedSymbol}
+                selectedEntryPrice={chartEntryPrice}
                 triggerLabel="Open advanced ticket"
                 triggerDescription="Stop orders · optional protection levels"
                 onSubmitted={(tradedSymbol) => {

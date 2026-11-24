@@ -18,22 +18,23 @@ type Props = {
   symbols: string[];
   positions: PositionOverlay[];
   onSymbolChange: (symbol: string) => void;
+  entryTickSize?: string;
+  selectedEntryPrice?: string | null;
+  onEntryPriceSelect?: (price: string) => void;
+  onPositionLevelChange?: (ticket: string, stopLoss: string, takeProfit: string) => Promise<void>;
 };
 
 type CandleResponse = {
   symbol: string;
   timeframe: string;
-  data_source: "mt5" | "real_market" | "simulation";
+  data_source: "mt5" | "real_market";
   simulated: boolean;
+  quote_time: string;
   candles: ReplayCandle[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function isDataSource(value: unknown): value is CandleResponse["data_source"] {
-  return value === "mt5" || value === "real_market" || value === "simulation";
 }
 
 function responseError(value: unknown): string {
@@ -47,6 +48,10 @@ function responseError(value: unknown): string {
   return "Unable to load market candles";
 }
 
+function isDataSource(value: unknown): value is CandleResponse["data_source"] {
+  return value === "mt5" || value === "real_market";
+}
+
 function parseCandleResponse(value: unknown): CandleResponse | null {
   if (!isRecord(value) || !Array.isArray(value.candles)) return null;
   if (
@@ -54,6 +59,7 @@ function parseCandleResponse(value: unknown): CandleResponse | null {
     || typeof value.timeframe !== "string"
     || !isDataSource(value.data_source)
     || typeof value.simulated !== "boolean"
+    || typeof value.quote_time !== "string"
   ) return null;
 
   const candles: ReplayCandle[] = [];
@@ -82,17 +88,25 @@ function parseCandleResponse(value: unknown): CandleResponse | null {
     timeframe: value.timeframe,
     data_source: value.data_source,
     simulated: value.simulated,
+    quote_time: value.quote_time,
     candles,
   };
 }
 
 function sourceLabel(source: CandleResponse["data_source"]): string {
-  if (source === "mt5") return "MT5 · BROKER CANDLES";
-  if (source === "real_market") return "REAL MARKET OHLC · PAPER EXECUTION";
-  return "SIMULATED MARKET PREVIEW";
+  return source === "mt5" ? "MT5 · BROKER PRICES" : "REAL MARKET OHLC · SIM ACCOUNT";
 }
 
-export function LiveMarketChart({ symbol, symbols, positions, onSymbolChange }: Props) {
+export function LiveMarketChart({
+  symbol,
+  symbols,
+  positions,
+  onSymbolChange,
+  entryTickSize,
+  selectedEntryPrice,
+  onEntryPriceSelect,
+  onPositionLevelChange,
+}: Props) {
   const [timeframe, setTimeframe] = useState<(typeof timeframes)[number]>("M5");
   const [result, setResult] = useState<CandleResponse | null>(null);
   const [requestState, setRequestState] = useState({ key: "", loading: true, error: "", updatedAt: "" });
@@ -132,15 +146,15 @@ export function LiveMarketChart({ symbol, symbols, positions, onSymbolChange }: 
       }
     }
 
-    const stopPolling = startVisiblePolling(refresh, 15000);
+    const stopPolling = startVisiblePolling(refresh, 5000);
     return () => {
       active = false;
       stopPolling();
     };
   }, [requestKey, symbol, timeframe]);
 
-  const currentResult = result?.symbol === symbol && result.timeframe === timeframe ? result : null;
   const currentRequest = requestState.key === requestKey ? requestState : { key: requestKey, loading: true, error: "", updatedAt: "" };
+  const currentResult = !currentRequest.error && result?.symbol === symbol && result.timeframe === timeframe ? result : null;
   const candles = currentResult?.candles ?? [];
 
   return (
@@ -155,9 +169,11 @@ export function LiveMarketChart({ symbol, symbols, positions, onSymbolChange }: 
           </span>
           <div>
             <strong>Market chart</strong>
-            <p>{currentResult
-              ? `${sourceLabel(currentResult.data_source)}${currentRequest.updatedAt ? ` · updated ${currentRequest.updatedAt}` : ""}`
-              : "Loading candle feed…"}</p>
+            <p>{currentRequest.error
+              ? "MARKET DATA UNAVAILABLE"
+              : currentResult
+                ? `${sourceLabel(currentResult.data_source)} · ${currentResult.data_source === "mt5" ? "quote" : "last bar"} ${new Date(currentResult.quote_time).toLocaleTimeString()}${currentRequest.updatedAt ? ` · refreshed ${currentRequest.updatedAt}` : ""}`
+                : "Loading real market prices…"}</p>
           </div>
         </div>
         <div className="live-market-controls">
@@ -189,6 +205,8 @@ export function LiveMarketChart({ symbol, symbols, positions, onSymbolChange }: 
       {currentRequest.error && <p className="error-text live-market-error" role="alert">{currentRequest.error}</p>}
       {currentRequest.loading && candles.length === 0 ? (
         <section className="card live-market-loading">Loading {symbol} {timeframe} candles…</section>
+      ) : currentRequest.error ? (
+        <section className="card live-market-loading live-market-empty">The market data provider is unavailable. Generated candles are not substituted.</section>
       ) : candles.length ? (
         <>
           {positions.length > 0 && (
@@ -216,6 +234,10 @@ export function LiveMarketChart({ symbol, symbols, positions, onSymbolChange }: 
             visibleCount={candles.length}
             live
             positions={positions}
+            entryTickSize={entryTickSize}
+            selectedEntryPrice={selectedEntryPrice}
+            onEntryPriceSelect={onEntryPriceSelect}
+            onPositionLevelChange={onPositionLevelChange}
             timeframeOptions={timeframes}
             activeTimeframe={timeframe}
             onTimeframeChange={(value) => {

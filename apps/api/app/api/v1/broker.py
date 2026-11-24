@@ -9,7 +9,8 @@ from pydantic import BaseModel, Field, SecretStr, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.broker import simulation_adapter
+from shared.contracts.broker import Candle
+from app.core.broker import cache_simulation_market_candle, get_live_mt5_tick, simulation_adapter
 from app.core.config import get_settings
 from app.core.credential_encryption import CredentialEncryptionError, decrypt_credentials, encrypt_credentials
 from app.core.database import get_db
@@ -454,7 +455,7 @@ def market_candles(
         if not runtime_store.broker_connected():
             raise HTTPException(
                 status_code=503,
-                detail="MT5 worker is disconnected; refusing to substitute non-broker candles",
+                detail="MT5 broker prices are unavailable; connect the Windows worker.",
             )
         snapshot = get_mt5_candles(normalized_symbol, timeframe)
         if snapshot is None:
@@ -463,32 +464,69 @@ def market_candles(
                 detail=f"No fresh MT5 {timeframe} candle history is available for {normalized_symbol}",
             )
         actual_symbol, candles = snapshot
-        data_source = "mt5"
-    elif state.broker == "simulation":
         try:
-            candles = get_real_market_candles(normalized_symbol, timeframe)
+            tick = get_live_mt5_tick(normalized_symbol)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if tick is None:
+            raise HTTPException(status_code=503, detail=f"No MT5 live quote is available for {normalized_symbol}")
+
+        interval_seconds = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}[timeframe]
+        candle_time = datetime.fromtimestamp(
+            int(tick.time.timestamp() // interval_seconds) * interval_seconds,
+            UTC,
+        )
+        live_price = (tick.bid + tick.ask) / Decimal("2")
+        latest = candles[-1]
+        if tick.time < latest.time:
+            raise HTTPException(status_code=503, detail=f"The MT5 quote for {normalized_symbol} predates its candle history")
+        if candle_time > latest.time:
+            candles.append(Candle(
+                symbol=actual_symbol,
+                timeframe=timeframe,
+                time=candle_time,
+                open=live_price,
+                high=max(tick.bid, tick.ask),
+                low=min(tick.bid, tick.ask),
+                close=live_price,
+                volume=Decimal("0"),
+            ))
+        else:
+            candles[-1] = Candle(
+                symbol=latest.symbol,
+                timeframe=latest.timeframe,
+                time=latest.time,
+                open=latest.open,
+                high=max(latest.high, tick.bid, tick.ask),
+                low=min(latest.low, tick.bid, tick.ask),
+                close=live_price,
+                volume=latest.volume,
+            )
+        quote_time = tick.time.isoformat()
+    else:
+        try:
+            candles = get_real_market_candles(
+                normalized_symbol,
+                timeframe,
+                cache_ttl=timedelta(seconds=3),
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         actual_symbol = normalized_symbol
-        data_source = "real_market"
-    else:
-        minutes = {"M1": 1, "M5": 5, "M15": 15, "M30": 30, "H1": 60, "H4": 240, "D1": 1440}[timeframe]
-        end = datetime.now(UTC)
-        start = end - timedelta(minutes=minutes * (limit - 1))
         try:
-            candles = simulation_adapter.get_historical_candles(normalized_symbol, timeframe, start, end)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-        actual_symbol = normalized_symbol
-        data_source = "simulation"
+            cache_simulation_market_candle(normalized_symbol, candles[-1])
+        except ValueError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        quote_time = candles[-1].time.isoformat()
 
     return {
         "symbol": actual_symbol,
         "timeframe": timeframe,
-        "data_source": data_source,
+        "data_source": "mt5" if state.broker == "mt5" else "real_market",
         "simulated": state.broker != "mt5",
+        "quote_time": quote_time,
         "candles": [
             {
                 "time": candle.time.isoformat(),
@@ -505,9 +543,9 @@ def market_candles(
 
 @router.get("/practice/status")
 def practice_status() -> dict:
-    closed_before_refresh = len(simulation_adapter.get_deal_history())
+    state_before_refresh = simulation_adapter.export_state()
     account = simulation_adapter.get_account_info()
-    if len(simulation_adapter.get_deal_history()) > closed_before_refresh:
+    if simulation_adapter.export_state() != state_before_refresh:
         save_runtime_state()
     return {
         "connected": True,
@@ -524,6 +562,45 @@ def practice_status() -> dict:
 
 @router.get("/practice/markets")
 def practice_markets() -> list[dict]:
+    state = runtime_store.state
+    if state.broker == "mt5":
+        if not runtime_store.broker_connected():
+            raise HTTPException(status_code=503, detail="MT5 live prices are unavailable while the Windows worker is disconnected")
+        instrument_map = {instrument.symbol: instrument for instrument in simulation_adapter.get_instruments()}
+        instruments = []
+        for quote in state.market_data:
+            symbol = str(quote.get("base_symbol", "")).upper()
+            instrument = instrument_map.get(symbol)
+            if instrument is None:
+                continue
+            try:
+                tick = get_live_mt5_tick(symbol)
+            except RuntimeError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            if tick is None:
+                raise HTTPException(status_code=503, detail=f"No MT5 live quote is available for {symbol}")
+            instruments.append({
+                "symbol": symbol,
+                "description": quote.get("description", instrument.description),
+                "bid": str(tick.bid),
+                "ask": str(tick.ask),
+                "spread": str(tick.ask - tick.bid),
+                "time": tick.time.isoformat(),
+                "digits": int(quote.get("digits", instrument.digits)),
+                "contract_size": str(quote.get("contract_size", instrument.contract_size)),
+                "tick_size": str(quote.get("tick_size", instrument.tick_size)),
+                "tick_value": str(quote.get("tick_value", instrument.tick_value)),
+                "minimum_volume": str(quote.get("minimum_volume", instrument.minimum_volume)),
+                "maximum_volume": str(quote.get("maximum_volume", instrument.maximum_volume)),
+                "volume_step": str(quote.get("volume_step", instrument.volume_step)),
+                "trade_allowed": bool(quote.get("trade_allowed", instrument.trade_allowed)),
+                "simulated": False,
+                "execution_mode": "paper_only",
+            })
+        if not instruments:
+            raise HTTPException(status_code=503, detail="No MT5 live quotes are available for practice trading")
+        return instruments
+
     instruments = []
     for instrument in simulation_adapter.get_instruments():
         tick = simulation_adapter.get_tick(instrument.symbol)
@@ -551,9 +628,12 @@ def practice_markets() -> list[dict]:
 @router.get("/practice/positions")
 def practice_positions() -> dict:
     state_before_refresh = simulation_adapter.export_state()
-    pending_orders = simulation_adapter.get_pending_orders()
-    items = simulation_adapter.get_open_positions()
-    account = simulation_adapter.get_account_info()
+    try:
+        pending_orders = simulation_adapter.get_pending_orders()
+        items = simulation_adapter.get_open_positions()
+        account = simulation_adapter.get_account_info()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     if simulation_adapter.export_state() != state_before_refresh:
         save_runtime_state()
     return {
@@ -575,7 +655,10 @@ def practice_positions() -> dict:
 
 @router.get("/practice/history")
 def practice_history() -> dict:
+    state_before_refresh = simulation_adapter.export_state()
     items = simulation_adapter.get_deal_history()
+    if simulation_adapter.export_state() != state_before_refresh:
+        save_runtime_state()
     return {
         "items": items,
         "total": len(items),
@@ -604,9 +687,9 @@ def positions() -> dict:
         items = [dict(position) for position in state.open_positions]
         simulated = False
     else:
-        closed_before_refresh = len(simulation_adapter.get_deal_history())
+        state_before_refresh = simulation_adapter.export_state()
         items = simulation_adapter.get_open_positions()
-        if len(simulation_adapter.get_deal_history()) > closed_before_refresh:
+        if simulation_adapter.export_state() != state_before_refresh:
             save_runtime_state()
         simulated = True
     return {
@@ -646,6 +729,8 @@ def create_simulation_order(payload: SimulationOrderRequest) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     position = None
     if order.broker_position_id is not None:
@@ -697,6 +782,8 @@ def close_simulation_position(ticket: str) -> dict:
         deal = simulation_adapter.close_position(ticket)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     save_runtime_state()
     return {"closed": True, "simulated": True, "trading_mode": "paper_only", "deal": deal}
 
@@ -709,6 +796,8 @@ def close_simulation_positions(payload: CloseSimulationPositionsRequest) -> dict
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     save_runtime_state()
     return {
         "closed": len(deals),
@@ -721,8 +810,8 @@ def close_simulation_positions(payload: CloseSimulationPositionsRequest) -> dict
 @router.patch("/practice/positions/{ticket}")
 def modify_simulation_position(ticket: str, payload: ModifySimulationPositionRequest) -> dict:
     settings = get_settings()
-    account = simulation_adapter.get_account_info()
     try:
+        account = simulation_adapter.get_account_info()
         position = simulation_adapter.modify_position(
             ticket,
             payload.stop_loss,
@@ -736,6 +825,8 @@ def modify_simulation_position(ticket: str, payload: ModifySimulationPositionReq
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     save_runtime_state()
     return {
         "modified": True,
@@ -782,7 +873,10 @@ def account_history(db: Session = Depends(get_db)) -> dict:
                 "simulated": deal.simulated,
             })
     elif connected and state.broker == "simulation":
+        state_before_refresh = simulation_adapter.export_state()
         items = simulation_adapter.get_deal_history()
+        if simulation_adapter.export_state() != state_before_refresh:
+            save_runtime_state()
     return {
         "items": items,
         "total": len(items),

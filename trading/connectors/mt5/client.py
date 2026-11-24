@@ -144,11 +144,18 @@ class MT5Adapter(BrokerConnector):
             quotes.append({
                 "base_symbol": base_symbol,
                 "symbol": actual_symbol,
+                "description": info.description,
                 "bid": str(tick.bid),
                 "ask": str(tick.ask),
                 "time": tick.time.isoformat(),
                 "digits": info.digits,
+                "contract_size": str(info.contract_size),
                 "tick_size": str(info.tick_size),
+                "tick_value": str(info.tick_value),
+                "minimum_volume": str(info.minimum_volume),
+                "maximum_volume": str(info.maximum_volume),
+                "volume_step": str(info.volume_step),
+                "trade_allowed": info.trade_allowed,
             })
         return quotes
 

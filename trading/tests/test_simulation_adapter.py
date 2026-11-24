@@ -131,6 +131,7 @@ def test_simulation_buy_stop_triggers_at_entry_price_and_can_be_cancelled():
     position = adapter.get_open_positions()[0]
     assert position["direction"] == "BUY"
     assert position["price_open"] == "1.10100"
+    assert adapter.get_deal_history()[0]["deal_type"] == "ENTRY"
 
     cancelled = adapter.submit_order(
         "EURUSD",

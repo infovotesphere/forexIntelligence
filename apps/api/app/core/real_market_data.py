@@ -61,7 +61,12 @@ _cache: dict[tuple[str, str], tuple[datetime, list[Candle]]] = {}
 _cache_lock = Lock()
 
 
-def get_real_market_candles(symbol: str, timeframe: str) -> list[Candle]:
+def get_real_market_candles(
+    symbol: str,
+    timeframe: str,
+    *,
+    cache_ttl: timedelta = timedelta(minutes=5),
+) -> list[Candle]:
     normalized_symbol = symbol.upper()
     yahoo_symbol = YAHOO_SYMBOLS.get(normalized_symbol)
     interval = YAHOO_INTERVALS.get(timeframe)
@@ -73,7 +78,7 @@ def get_real_market_candles(symbol: str, timeframe: str) -> list[Candle]:
     cache_key = (normalized_symbol, timeframe)
     with _cache_lock:
         cached = _cache.get(cache_key)
-        if cached and datetime.now(UTC) - cached[0] < timedelta(minutes=5):
+        if cached and datetime.now(UTC) - cached[0] < cache_ttl:
             return list(cached[1])
 
     range_value = "7d" if timeframe == "M1" else "60d" if timeframe in {"M5", "M15", "M30", "H1", "H4"} else "2y"
